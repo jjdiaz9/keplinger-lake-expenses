@@ -1,0 +1,1573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Household Expense Manager</title>
+<style>
+:root{
+  --paper:#F2F4F3; --card:#FFFFFF; --ink:#182420; --muted:#5C6A64;
+  --line:#D8DEDA; --line-soft:#E7ECE9;
+  --lake:#2E6E8E; --lake-soft:#E3EDF2; --russet:#A4562E;
+  --neg:#B23A32; --ok:#2F7A4D;
+  --radius:10px;
+  --sans:"Avenir Next","Seravek","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45}
+button{font-family:inherit;font-size:13px;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink);padding:6px 12px}
+button:hover{border-color:var(--lake);color:var(--lake)}
+button.primary{background:var(--lake);border-color:var(--lake);color:#fff}
+button.primary:hover{background:#25607e;color:#fff}
+button.danger{color:var(--neg);border-color:#E2C4C1}
+button.danger:hover{background:#FBF1F0;border-color:var(--neg)}
+button.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+button.ghost:hover{color:var(--lake)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--lake);outline-offset:1px}
+input,select{font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:5px 7px;background:#fff;color:var(--ink)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* ---------- header ----------
+   One single row. Every stacked row here costs ~40px of grid, which is
+   two ledger rows you'd otherwise have to scroll for.                  */
+header{background:var(--card);border-bottom:1px solid var(--line);padding:0 14px}
+.bar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:5px 0;min-height:42px}
+.bar h1{font-size:15.5px;font-weight:600;letter-spacing:.01em;margin:0;white-space:nowrap}
+.bar h1 .wave{color:var(--lake);font-weight:700}
+.bar .spacer{flex:1;min-width:4px}
+.bar .rule{width:1px;align-self:stretch;background:var(--line-soft);margin:2px 1px}
+.people-chips{display:flex;gap:5px}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);border:1px solid var(--line-soft);border-radius:999px;padding:1px 9px 1px 5px;background:#fff;white-space:nowrap}
+.chip .dot{width:8px;height:8px;border-radius:50%}
+.yeartabs{display:flex;gap:2px}
+.yeartabs button{border:1px solid transparent;background:transparent;border-radius:7px;padding:3px 10px;color:var(--muted);font-weight:500}
+.yeartabs button.active{color:var(--ink);background:var(--lake-soft);border-color:#CFE0E9}
+.viewtabs{display:flex;gap:2px}
+.viewtabs button{border:1px solid transparent;background:transparent;padding:3px 11px;color:var(--muted);border-radius:7px}
+.viewtabs button.active{color:var(--ink);background:#F5EDE7;border-color:#E8D6C8}
+#btnAddYear{padding:3px 8px}
+#btnSettings{padding:4px 8px;font-size:14px}
+@media (max-width:1120px){ .people-chips,.savednote{display:none} }
+
+main{padding:10px 14px 14px;max-width:1500px;margin:0 auto}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+
+/* ---------- grid ---------- */
+.gridwrap{overflow:auto;max-height:calc(100vh - 175px)}
+table.ledger{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%}
+.ledger th,.ledger td{border-bottom:1px solid var(--line-soft);padding:0;white-space:nowrap}
+.ledger thead th{position:sticky;top:0;z-index:3;background:var(--card);font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:5px 8px;text-align:right;border-bottom:1.5px solid var(--line)}
+.ledger thead th:first-child{text-align:left;z-index:4}
+.ledger td:first-child,.ledger th:first-child{position:sticky;left:0;background:var(--card);z-index:2;border-right:1.5px solid var(--line);min-width:178px;max-width:230px}
+.catcell{padding:3px 9px;cursor:pointer}
+.catcell:hover .catname{color:var(--lake)}
+.catname{font-weight:500;overflow:hidden;text-overflow:ellipsis;line-height:1.25}
+.catmeta{display:flex;align-items:center;gap:6px;margin-top:1px;line-height:1}
+.due{font-size:10px;color:var(--muted);line-height:1.1}
+.oncard{font-size:10px;color:var(--russet);line-height:1.1}
+.splitbar{height:3px;border-radius:2px;overflow:hidden;display:flex;width:52px;background:var(--line-soft)}
+.splitbar span{height:100%}
+.cellin{width:80px;border:none;border-radius:0;background:transparent;text-align:right;padding:4px 8px;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px}
+.cellin:hover{background:var(--lake-soft)}
+.cellin:focus{background:#fff;outline:2px solid var(--lake);outline-offset:-2px}
+.calc{padding:4px 8px;text-align:right;color:var(--muted);font-size:12.5px}
+
+/* Compact density — drops the split bar / due-day line from each row,
+   which is what actually makes rows tall. Both stay on the row tooltip
+   and in the edit dialog. */
+body.compact .catmeta{display:none}
+body.compact .catcell{padding:2px 9px}
+body.compact .cellin,body.compact .calc{padding:2px 8px;font-size:12px}
+body.compact .rowlabel{padding:2px 9px}
+body.compact .ledger td:first-child,body.compact .ledger th:first-child{min-width:158px;max-width:210px}
+body.compact .cellin{width:74px}
+body.compact .ledger th.yr,body.compact .ledger td.yr{min-width:92px;padding-left:12px;padding-right:13px}
+tr.computedrow td{background:#FAFBFA;color:var(--muted);font-style:italic}
+tr.totalrow td{background:var(--lake-soft);border-top:2px double var(--lake);font-weight:600;font-style:normal;color:var(--ink)}
+tr.persontotal td{background:#FBF9F6}
+tr.persontotal td:first-child .catname{font-weight:600}
+tr.owedrow td{font-size:12px;color:var(--muted);background:#FAFBFA}
+.rowlabel{padding:4px 9px;font-weight:500}
+
+/* ---------- month column structure ----------
+   Row tints use background-COLOR, column banding uses background-IMAGE,
+   so the two layer instead of fighting each other.                     */
+.ledger td.mo.band,.ledger th.mo.band{background-image:linear-gradient(rgba(24,36,32,.030),rgba(24,36,32,.030))}
+.ledger th.mo.qstart,.ledger td.mo.qstart{border-left:1.5px solid var(--line)}
+.ledger thead th.mo{padding-bottom:4px}
+.ledger thead th.mo .q{display:block;font-size:9px;line-height:1;letter-spacing:.08em;color:#9AA7A1;font-weight:600;margin-bottom:1px;height:10px}
+.ledger th.mo.curm{color:var(--lake)}
+.ledger thead th.mo.curm{box-shadow:inset 0 3px 0 var(--lake)}
+.ledger td.mo.curm,.ledger th.mo.curm,
+.ledger td.mo.curm.band,.ledger th.mo.curm.band{background-image:linear-gradient(rgba(46,110,142,.10),rgba(46,110,142,.10))}
+
+/* year-total column: pinned right, clearly separated, roomy */
+.ledger th.yr,.ledger td.yr{position:sticky;right:0;z-index:2;background-color:var(--card);
+  border-left:2px solid var(--line);min-width:104px;padding-left:14px;padding-right:16px}
+.ledger thead th.yr{z-index:4;text-align:right}
+.ledger td.yr{color:var(--ink);font-weight:600;font-style:normal}
+.ledger tbody tr.owedrow td.yr{border-left-color:var(--line-soft)}
+
+/* keep the two pinned columns matching their row's tint */
+.ledger tr.computedrow td:first-child,.ledger tr.computedrow td.yr{background-color:#FAFBFA}
+.ledger tr.owedrow td:first-child,.ledger tr.owedrow td.yr{background-color:#FAFBFA}
+.ledger tr.persontotal td:first-child,.ledger tr.persontotal td.yr{background-color:#FBF9F6}
+.ledger tr.totalrow td:first-child,.ledger tr.totalrow td.yr{background-color:var(--lake-soft)}
+
+/* hovering any cell lights its whole column, so a value is easy to trace
+   up to its month heading across 14 columns */
+.ledger:has(td:nth-child(2):hover) th:nth-child(2),.ledger:has(td:nth-child(2):hover) td:nth-child(2),
+.ledger:has(td:nth-child(3):hover) th:nth-child(3),.ledger:has(td:nth-child(3):hover) td:nth-child(3),
+.ledger:has(td:nth-child(4):hover) th:nth-child(4),.ledger:has(td:nth-child(4):hover) td:nth-child(4),
+.ledger:has(td:nth-child(5):hover) th:nth-child(5),.ledger:has(td:nth-child(5):hover) td:nth-child(5),
+.ledger:has(td:nth-child(6):hover) th:nth-child(6),.ledger:has(td:nth-child(6):hover) td:nth-child(6),
+.ledger:has(td:nth-child(7):hover) th:nth-child(7),.ledger:has(td:nth-child(7):hover) td:nth-child(7),
+.ledger:has(td:nth-child(8):hover) th:nth-child(8),.ledger:has(td:nth-child(8):hover) td:nth-child(8),
+.ledger:has(td:nth-child(9):hover) th:nth-child(9),.ledger:has(td:nth-child(9):hover) td:nth-child(9),
+.ledger:has(td:nth-child(10):hover) th:nth-child(10),.ledger:has(td:nth-child(10):hover) td:nth-child(10),
+.ledger:has(td:nth-child(11):hover) th:nth-child(11),.ledger:has(td:nth-child(11):hover) td:nth-child(11),
+.ledger:has(td:nth-child(12):hover) th:nth-child(12),.ledger:has(td:nth-child(12):hover) td:nth-child(12),
+.ledger:has(td:nth-child(13):hover) th:nth-child(13),.ledger:has(td:nth-child(13):hover) td:nth-child(13){
+  box-shadow:inset 0 0 0 9999px rgba(46,110,142,.055)}
+.ledger:has(td:nth-child(2):hover) thead th:nth-child(2),
+.ledger:has(td:nth-child(3):hover) thead th:nth-child(3),
+.ledger:has(td:nth-child(4):hover) thead th:nth-child(4),
+.ledger:has(td:nth-child(5):hover) thead th:nth-child(5),
+.ledger:has(td:nth-child(6):hover) thead th:nth-child(6),
+.ledger:has(td:nth-child(7):hover) thead th:nth-child(7),
+.ledger:has(td:nth-child(8):hover) thead th:nth-child(8),
+.ledger:has(td:nth-child(9):hover) thead th:nth-child(9),
+.ledger:has(td:nth-child(10):hover) thead th:nth-child(10),
+.ledger:has(td:nth-child(11):hover) thead th:nth-child(11),
+.ledger:has(td:nth-child(12):hover) thead th:nth-child(12),
+.ledger:has(td:nth-child(13):hover) thead th:nth-child(13){color:var(--lake)}
+.gridfoot{display:flex;gap:8px;padding:5px 8px;border-top:1px solid var(--line);align-items:center}
+.gridfoot button{padding:3px 10px}
+.syncbar button{padding:2px 9px}
+
+/* ---------- splits ---------- */
+.splits table{border-collapse:collapse;width:100%}
+.splits th{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1.5px solid var(--line)}
+.splits td{padding:5px 8px;border-bottom:1px solid var(--line-soft)}
+.splits input,.splits select{width:100%}
+.splits .w-sm{width:78px}.splits .w-md{width:120px}
+.settle{padding:12px 14px;border-top:1px solid var(--line);background:#FAFBFA;font-size:13px}
+.settle b{font-family:var(--mono)}
+
+/* ---------- summary ---------- */
+.summary table{border-collapse:collapse;width:100%}
+.summary th{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:right;padding:8px 12px;border-bottom:1.5px solid var(--line)}
+.summary th:first-child{text-align:left}
+.summary td{padding:6px 12px;border-bottom:1px solid var(--line-soft);text-align:right}
+.summary td:first-child{text-align:left;font-weight:500}
+.summary tr.totalrow td{background:var(--lake-soft);border-top:2px double var(--lake);font-weight:600}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;padding:14px}
+.statcard{border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;background:#fff}
+.statcard .lbl{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.statcard .val{font-size:22px;font-weight:600;margin-top:4px}
+.statcard .sub{font-size:12px;color:var(--muted);margin-top:2px}
+
+/* ---------- modal ---------- */
+.overlay{position:fixed;inset:0;background:rgba(24,36,32,.45);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.modal{background:#fff;border-radius:14px;max-width:460px;width:100%;max-height:90vh;overflow:auto;padding:20px 22px;box-shadow:0 18px 50px rgba(0,0,0,.25)}
+.modal h2{margin:0 0 14px;font-size:16px}
+.field{margin-bottom:13px}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.field input[type=text],.field select{width:100%}
+.radios label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);margin:5px 0;cursor:pointer}
+.pctrow{display:flex;align-items:center;gap:8px;margin:4px 0 4px 26px}
+.pctrow input{width:70px}
+.modalfoot{display:flex;gap:8px;margin-top:18px}
+.modalfoot .spacer{flex:1}
+.hint{font-size:12px;color:var(--muted)}
+.divider{border:none;border-top:1px solid var(--line-soft);margin:16px 0}
+
+/* ---------- empty / misc ---------- */
+.empty{padding:70px 24px;text-align:center}
+.empty h2{font-weight:600;font-size:18px}
+.empty p{color:var(--muted);max-width:440px;margin:8px auto 20px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 18px;border-radius:999px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:30}
+.toast.show{opacity:1}
+.savednote{font-size:11.5px;color:var(--muted)}
+
+/* ---------- sync ---------- */
+.syncbtn{display:inline-flex;align-items:center;gap:6px}
+.syncdot{width:8px;height:8px;border-radius:50%;background:var(--line);flex:none}
+.syncdot.clean{background:var(--ok)}
+.syncdot.dirty{background:var(--russet)}
+.syncdot.none{background:var(--line)}
+.syncbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--lake-soft);border-bottom:1px solid var(--line);padding:4px 14px;font-size:12.5px}
+.syncbar.warn{background:#FBF3EE;border-bottom-color:#E6D2C4}
+.syncbar .msg{flex:1;min-width:200px}
+.syncbar .fname{font-family:var(--mono);font-size:12px}
+.syncbar button{padding:4px 10px;font-size:12.5px}
+.conflictbox{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:6px 0;cursor:pointer}
+.conflictbox:hover{border-color:var(--lake);background:var(--lake-soft)}
+.conflictbox .who{font-weight:600;font-size:13px}
+.conflictbox .when{font-size:12px;color:var(--muted);margin-top:2px}
+.conflictbox .what{font-size:12px;color:var(--muted);margin-top:4px}
+.pos{color:var(--ok)} .negv{color:var(--neg)}
+@media (max-width:700px){
+  main{padding:10px 8px 60px}
+  .ledger td:first-child,.ledger th:first-child{min-width:140px}
+  .cellin{width:70px}
+}
+@media (prefers-reduced-motion:reduce){ .toast{transition:none} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <h1><span class="wave">≈</span> <span id="appTitle">Household Expenses</span></h1>
+    <span class="rule"></span>
+    <div class="yeartabs" id="yearTabs"></div>
+    <button class="ghost" id="btnAddYear" title="Start a new year using this year's categories" aria-label="Add year">+</button>
+    <div class="people-chips" id="peopleChips"></div>
+    <div class="spacer"></div>
+    <div class="viewtabs" id="viewTabs">
+      <button data-view="ledger" class="active">Ledger</button>
+      <button data-view="splits">Splits</button>
+      <button data-view="summary">Summary</button>
+    </div>
+    <span class="rule"></span>
+    <span class="savednote" id="savedNote"></span>
+    <button id="btnSync" class="primary syncbtn" title="Save your data to the shared sync file">
+      <span class="syncdot none" id="syncDot"></span><span id="syncBtnLabel">Sync</span>
+    </button>
+    <button id="btnSettings" class="ghost" title="Settings" aria-label="Settings">⚙︎</button>
+    <input type="file" id="fileInput" accept="application/json,.json" hidden>
+    <input type="file" id="syncPullInput" accept="application/json,.json" hidden>
+  </div>
+</header>
+<div id="syncBar"></div>
+
+<main id="main"></main>
+<div class="toast" id="toast"></div>
+<div id="modalRoot"></div>
+
+<script>
+"use strict";
+/* =====================================================================
+   Household Expense Manager — single-file, no dependencies.
+   All data lives in THIS browser's localStorage. Nothing is embedded in
+   this file and nothing leaves your machine. Use Export / Import to
+   move data between browsers or computers.
+   ===================================================================== */
+
+const LS_KEY = "household-expense-manager-v1";
+const SYNC_KEY = "household-expense-manager-sync-v1";
+const DEVICE_KEY = "household-expense-manager-device-v1";
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const MON_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const PALETTE = ["#2E6E8E","#A4562E","#4E7A46","#7A4E8E","#8E7A2E","#2E8E7A"];
+
+let data = null;          // whole dataset
+let curYear = null;       // active year string
+let curView = "ledger";
+let saveTimer = null;
+
+/* ---------- sync state (never travels inside the data file) ----------
+   sync = {
+     fileName:  last file we synced with, for display
+     baseRev:   the rev we last pulled or pushed — our "common ancestor"
+     lastPush:  ISO time of last successful write to the file
+     lastPull:  ISO time of last successful read from the file
+     auto:      auto-push on change (only meaningful with a file handle)
+     configured:true once the user has synced at least once
+   }                                                                   */
+let sync = null;
+let fileHandle = null;    // FileSystemFileHandle, when the browser supports it
+let dirty = false;        // local edits not yet pushed to the file
+let pullPrompted = false; // only nag once per page load
+let autoPushTimer = null;
+const HAS_FS_ACCESS = (typeof window.showSaveFilePicker === "function");
+
+/* ---------- persistence ---------- */
+function load(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(raw){ data = JSON.parse(raw); }
+  }catch(e){ console.error("Could not read saved data:", e); }
+  try{
+    const raws = localStorage.getItem(SYNC_KEY);
+    sync = raws ? JSON.parse(raws) : null;
+  }catch(e){ sync = null; }
+  if(!sync) sync = {fileName:null, baseRev:0, lastPush:null, lastPull:null, auto:false, configured:false};
+  if(data && data.years && Object.keys(data.years).length){
+    const ys = Object.keys(data.years).sort();
+    curYear = data.lastYear && data.years[data.lastYear] ? data.lastYear : ys[ys.length-1];
+  }
+  // If our local copy is ahead of what we last pushed, we have unsynced edits.
+  dirty = !!(data && sync.configured && (data.sync?.rev||0) > (sync.baseRev||0));
+}
+function saveSyncState(){
+  try{ localStorage.setItem(SYNC_KEY, JSON.stringify(sync)); }catch(e){}
+}
+/* save(true) = "quiet": persist locally without counting as a data edit.
+   Used for view/year preferences, which shouldn't mark you out of sync. */
+function save(quiet){
+  if(!data) return;
+  data.lastYear = curYear;
+  data.sync = data.sync || {rev:0};
+  if(!quiet){
+    // stamp the edit so other computers can tell whose copy is newer
+    data.sync.rev = (data.sync.rev||0) + 1;
+    data.sync.modified = new Date().toISOString();
+    data.sync.device = deviceName();
+    if(sync?.configured){ dirty = true; }
+  }
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(()=>{
+    try{
+      localStorage.setItem(LS_KEY, JSON.stringify(data));
+      const n = document.getElementById("savedNote");
+      n.textContent = "Saved " + new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
+    }catch(e){
+      toast("Saving failed — this browser may be blocking local storage.");
+    }
+    updateSyncUI();
+    scheduleAutoPush();
+  }, 300);
+}
+function freshData(){
+  return {
+    version:1, app:"household-expense-manager", title:"Household Expenses",
+    people:[{id:"p1",name:"Person 1",color:PALETTE[0]},{id:"p2",name:"Person 2",color:PALETTE[1]}],
+    years:{}, sync:{rev:0}
+  };
+}
+function newYearObj(){ return {categories:[], splits:[]}; }
+
+/* ---------- helpers ---------- */
+const $ = sel => document.querySelector(sel);
+const el = (tag, attrs={}, ...kids)=>{
+  const n = document.createElement(tag);
+  for(const [k,v] of Object.entries(attrs)){
+    if(k==="class") n.className=v;
+    else if(k==="html") n.innerHTML=v;
+    else if(k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if(v!==null && v!==undefined) n.setAttribute(k,v);
+  }
+  for(const k of kids){ if(k!=null) n.append(k); }
+  return n;
+};
+function uid(prefix){ return prefix + "-" + Math.random().toString(36).slice(2,9); }
+function fmt(n, blankZero){
+  if(n==null || (blankZero && Math.abs(n)<0.005)) return "";
+  return n.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function money(n){ return "$" + fmt(Math.abs(n)||0) + ""; }
+function parseNum(s){
+  if(s==null) return null;
+  const t = String(s).replace(/[$,\s]/g,"");
+  if(t==="") return null;
+  const v = Number(t);
+  return isFinite(v) ? v : null;
+}
+function toast(msg){
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove("show"), 2600);
+}
+function person(id){ return data.people.find(p=>p.id===id); }
+
+/* ---------- split math ---------- */
+// Returns {personId: fraction} for a category's split, normalized to 1.
+function splitFractions(split){
+  const n = data.people.length;
+  const out = {};
+  if(!split || split.mode==="even"){
+    data.people.forEach(p=> out[p.id] = 1/n);
+  } else if(split.mode==="solo"){
+    data.people.forEach(p=> out[p.id] = (p.id===split.personId ? 1 : 0));
+    if(!(split.personId in out)) data.people.forEach(p=> out[p.id]=1/n); // person removed
+  } else if(split.mode==="custom"){
+    let tot = 0;
+    data.people.forEach(p=> tot += Number(split.pct?.[p.id]||0));
+    if(tot<=0){ data.people.forEach(p=> out[p.id]=1/n); }
+    else data.people.forEach(p=> out[p.id] = Number(split.pct?.[p.id]||0)/tot);
+  }
+  return out;
+}
+function splitLabel(split){
+  if(!split || split.mode==="even") return "Split evenly";
+  if(split.mode==="solo"){ const p=person(split.personId); return p ? "Only "+p.name : "Split evenly"; }
+  if(split.mode==="custom"){
+    return data.people.map(p=> (p.name[0]||"?")+" "+Math.round((splitFractions(split)[p.id]||0)*100)+"%").join(" · ");
+  }
+  return "";
+}
+
+/* Compute everything for a year. Mirrors the spreadsheet's logic:
+   - Statement categories (e.g. a credit card) count toward the grand total.
+   - Items marked "on" a statement are its breakdown: they get their own
+     split for per-person shares, and the statement's un-itemized remainder
+     ("Other on …") is split by the statement's own split setting.
+   - Split purchases add what each person owes the payer to that person's
+     monthly total (like the sheet's "Owed to …" rows).                 */
+function computeYear(y){
+  const yr = data.years[y];
+  const res = {
+    monthTotal: Array(13).fill(0),               // 1..12
+    personMonth: {},                              // pid -> [13]
+    remainders: {},                               // stmtId -> [13]
+    owedPairs: [],                                // per month: [{from,to,amt}]
+    stmtHasCard: {},
+  };
+  data.people.forEach(p=> res.personMonth[p.id] = Array(13).fill(0));
+  for(let m=1;m<=12;m++) res.owedPairs[m]=[];
+
+  const cats = yr.categories;
+  const cardSum = {}; // stmtId -> [13]
+  cats.forEach(c=>{ if(c.kind==="statement"){ cardSum[c.id]=Array(13).fill(0); } });
+  cats.forEach(c=>{
+    if(c.kind==="normal" && c.onCard && cardSum[c.onCard]){
+      res.stmtHasCard[c.onCard]=true;
+      for(let m=1;m<=12;m++) cardSum[c.onCard][m] += Number(c.amounts?.[m]||0);
+    }
+  });
+
+  cats.forEach(c=>{
+    const fr = splitFractions(c.split);
+    for(let m=1;m<=12;m++){
+      const amt = Number(c.amounts?.[m]||0);
+      if(c.kind==="statement"){
+        res.monthTotal[m] += amt;
+        const rem = amt - cardSum[c.id][m];
+        if(!res.remainders[c.id]) res.remainders[c.id]=Array(13).fill(0);
+        res.remainders[c.id][m] = rem;
+        data.people.forEach(p=> res.personMonth[p.id][m] += rem*fr[p.id]);
+      } else {
+        if(!c.onCard) res.monthTotal[m] += amt;   // card items live inside the statement total
+        data.people.forEach(p=> res.personMonth[p.id][m] += amt*fr[p.id]);
+      }
+    }
+  });
+
+  // Split purchases -> monthly owed, netted pairwise.
+  const owe = {}; // month -> from -> to -> amt
+  (yr.splits||[]).forEach(s=>{
+    const m = Number(s.month); if(!(m>=1&&m<=12)) return;
+    const cost = Number(s.cost||0); const pct = Number(s.otherPct==null?50:s.otherPct);
+    const payer = s.paidBy;
+    if(!person(payer) || !cost) return;
+    const others = data.people.filter(p=>p.id!==payer);
+    if(!others.length) return;
+    const owedEach = cost*(pct/100)/others.length;
+    owe[m] = owe[m]||{};
+    others.forEach(o=>{
+      owe[m][o.id] = owe[m][o.id]||{};
+      owe[m][o.id][payer] = (owe[m][o.id][payer]||0) + owedEach;
+    });
+  });
+  for(let m=1;m<=12;m++){
+    const seen = new Set();
+    const mm = owe[m]||{};
+    data.people.forEach(a=> data.people.forEach(b=>{
+      if(a.id===b.id) return;
+      const key = [a.id,b.id].sort().join("|");
+      if(seen.has(key)) return; seen.add(key);
+      const ab = (mm[a.id]?.[b.id])||0, ba = (mm[b.id]?.[a.id])||0;
+      const net = ab-ba;
+      if(Math.abs(net)>0.004){
+        const from = net>0? a.id : b.id, to = net>0? b.id : a.id;
+        res.owedPairs[m].push({from,to,amt:Math.abs(net)});
+        res.personMonth[from][m] += Math.abs(net);
+      }
+    }));
+  }
+  return res;
+}
+
+/* ---------- header rendering ---------- */
+function renderHeader(){
+  $("#appTitle").textContent = data?.title || "Household Expenses";
+  const chips = $("#peopleChips"); chips.innerHTML="";
+  if(data) data.people.forEach(p=>{
+    chips.append(el("span",{class:"chip"}, el("span",{class:"dot",style:"background:"+p.color}), p.name));
+  });
+  const yt = $("#yearTabs"); yt.innerHTML="";
+  if(data) Object.keys(data.years).sort().forEach(y=>{
+    yt.append(el("button",{class: y===curYear?"active":"", onclick:()=>{curYear=y; save(true); render();}}, y));
+  });
+  document.querySelectorAll("#viewTabs button").forEach(b=>{
+    b.classList.toggle("active", b.dataset.view===curView);
+  });
+}
+
+/* ---------- density + fit ---------- */
+const DENSITY_KEY = "household-expense-manager-density-v1";
+function isCompact(){
+  try{ return localStorage.getItem(DENSITY_KEY)==="compact"; }catch(e){ return false; }
+}
+function applyDensity(){
+  document.body.classList.toggle("compact", isCompact());
+}
+function setCompact(on){
+  try{ localStorage.setItem(DENSITY_KEY, on?"compact":"normal"); }catch(e){}
+  applyDensity(); fitGrid();
+}
+/* Let the grid use whatever height is actually left below the header —
+   the header grows and shrinks (sync bar, wrapped year tabs), so a fixed
+   100vh offset either clips rows or leaves a dead gap. */
+function afterPaint(fn){
+  if(typeof requestAnimationFrame==="function") requestAnimationFrame(fn);
+  else setTimeout(fn,0);
+}
+function fitGrid(){
+  const wrap = document.querySelector(".gridwrap");
+  if(!wrap) return;
+  const foot = document.querySelector(".gridfoot");
+  const footH = foot ? foot.getBoundingClientRect().height : 0;
+  const top = wrap.getBoundingClientRect().top;
+  const avail = window.innerHeight - top - footH - 16;  // 16 = main's bottom padding
+  wrap.style.maxHeight = Math.max(200, Math.round(avail)) + "px";
+}
+window.addEventListener("resize", fitGrid);
+
+/* ---------- ledger view ---------- */
+/* Column classes that give the 12 months visible structure:
+   .band   alternating tint so adjacent months don't blur together
+   .qstart a rule at Jan/Apr/Jul/Oct, grouping the year into quarters
+   .curm   highlights the month you're actually in                    */
+function moClass(m, base){
+  const now = new Date();
+  let c = (base ? base+" " : "") + "mo";
+  if(m===1 || m===4 || m===7 || m===10) c += " qstart";
+  if(m%2===0) c += " band";
+  if(String(now.getFullYear())===curYear && now.getMonth()+1===m) c += " curm";
+  return c;
+}
+function renderLedger(root){
+  const yr = data.years[curYear];
+  const R = computeYear(curYear);
+  const panel = el("div",{class:"panel"});
+  const wrap = el("div",{class:"gridwrap"});
+  const table = el("table",{class:"ledger"});
+
+  const thead = el("thead");
+  const hr = el("tr", {}, el("th",{},"Expense"));
+  MON_ABBR.forEach((m,i)=> hr.append(el("th",{class:moClass(i+1)},
+    el("span",{class:"q"}, (i%3===0) ? "Q"+(Math.floor(i/3)+1) : ""), m)));
+  hr.append(el("th",{class:"yr"},"Year total"));
+  thead.append(hr); table.append(thead);
+
+  const tbody = el("tbody");
+  yr.categories.forEach((c,idx)=>{
+    const tr = el("tr");
+    const fr = splitFractions(c.split);
+    const bar = el("span",{class:"splitbar",title:splitLabel(c.split)});
+    data.people.forEach(p=> bar.append(el("span",{style:`width:${(fr[p.id]||0)*100}%;background:${p.color}`})));
+    const meta = el("div",{class:"catmeta"}, bar);
+    if(c.dueDay) meta.append(el("span",{class:"due"},"due "+c.dueDay));
+    if(c.kind==="statement") meta.append(el("span",{class:"oncard"},"card statement"));
+    else if(c.onCard){
+      const st = yr.categories.find(x=>x.id===c.onCard);
+      meta.append(el("span",{class:"oncard"},"on "+(st?st.name:"card")));
+    }
+    const cell = el("td",{}, el("div",{class:"catcell",title:"Edit category",onclick:()=>openCategoryModal(c.id)},
+      el("div",{class:"catname"},c.name), meta));
+    tr.append(cell);
+    let ytd=0;
+    for(let m=1;m<=12;m++){
+      const v = c.amounts?.[m];
+      if(typeof v==="number") ytd+=v;
+      const inp = el("input",{class:"cellin",type:"text",inputmode:"decimal",
+        value: (typeof v==="number")? fmt(v):"",
+        "aria-label": c.name+" "+MONTHS[m-1],
+        onchange:(e)=>{
+          const nv = parseNum(e.target.value);
+          c.amounts = c.amounts||{};
+          if(nv==null) delete c.amounts[m]; else c.amounts[m]=nv;
+          e.target.value = nv==null? "": fmt(nv);
+          save(); refreshComputed();
+        }});
+      tr.append(el("td",{class:moClass(m)}, inp));
+    }
+    tr.append(el("td",{class:"calc num yr","data-ytd":c.id}, fmt(ytd,true)));
+    tbody.append(tr);
+  });
+
+  // computed remainder rows for statements that have card items
+  yr.categories.filter(c=>c.kind==="statement" && R.stmtHasCard[c.id]).forEach(st=>{
+    const tr = el("tr",{class:"computedrow","data-remrow":st.id});
+    tr.append(el("td",{}, el("div",{class:"rowlabel"},"Other on "+st.name)));
+    let ytd=0;
+    for(let m=1;m<=12;m++){ const v=R.remainders[st.id][m]; ytd+=v;
+      tr.append(el("td",{class:moClass(m,"calc num")}, fmt(v,true))); }
+    tr.append(el("td",{class:"calc num yr"},fmt(ytd,true)));
+    tbody.append(tr);
+  });
+
+  // owed row (from split purchases)
+  const anyOwed = R.owedPairs.some(a=>a&&a.length);
+  if(anyOwed){
+    const tr = el("tr",{class:"owedrow","data-owedrow":1});
+    tr.append(el("td",{}, el("div",{class:"rowlabel"},"Owed from split purchases")));
+    for(let m=1;m<=12;m++){
+      const txt = (R.owedPairs[m]||[]).map(o=> person(o.from).name.slice(0,1)+"→"+person(o.to).name.slice(0,1)+" "+fmt(o.amt)).join(", ");
+      tr.append(el("td",{class:moClass(m,"calc num")},txt));
+    }
+    tr.append(el("td",{class:"calc yr"},""));
+    tbody.append(tr);
+  }
+
+  // total + per-person rows
+  const trTot = el("tr",{class:"totalrow computedrow","data-totrow":1});
+  trTot.append(el("td",{}, el("div",{class:"rowlabel"},"Total")));
+  let g=0;
+  for(let m=1;m<=12;m++){ g+=R.monthTotal[m]; trTot.append(el("td",{class:moClass(m,"calc num")},fmt(R.monthTotal[m],true))); }
+  trTot.append(el("td",{class:"calc num yr"},fmt(g,true)));
+  tbody.append(trTot);
+
+  data.people.forEach(p=>{
+    const tr = el("tr",{class:"persontotal computedrow","data-prow":p.id});
+    tr.append(el("td",{}, el("div",{class:"catcell",style:"cursor:default"},
+      el("div",{class:"catname"},"Total "+p.name),
+      el("div",{class:"catmeta"}, el("span",{class:"splitbar"}, el("span",{style:"width:100%;background:"+p.color}))))));
+    let s=0;
+    for(let m=1;m<=12;m++){ const v=R.personMonth[p.id][m]; s+=v; tr.append(el("td",{class:moClass(m,"calc num")},fmt(v,true))); }
+    tr.append(el("td",{class:"calc num yr"},fmt(s,true)));
+    tbody.append(tr);
+  });
+
+  table.append(tbody);
+  wrap.append(table);
+  panel.append(wrap);
+  panel.append(el("div",{class:"gridfoot"},
+    el("button",{onclick:()=>openCategoryModal(null,false)},"+ Add expense"),
+    el("button",{onclick:()=>openCategoryModal(null,true)},"+ Add card statement"),
+    el("span",{class:"hint",style:"align-self:center;margin-left:6px"},"Click an expense name to change its split, due day, or card."),
+    el("span",{class:"spacer",style:"flex:1"}),
+    el("button",{class:"ghost",title:"Toggle row height",onclick:()=>{ setCompact(!isCompact()); render(); }},
+      isCompact() ? "↕ Comfortable rows" : "↕ Compact rows")
+  ));
+  root.append(panel);
+  afterPaint(fitGrid);
+}
+// re-render only computed cells after an amount edit (cheap: full re-render is fine too)
+function refreshComputed(){ render(); }
+
+/* ---------- working across years ----------
+   Each year holds its own copy of the expense list. Copies made by
+   "+ Year" keep the same id, so we match on id first and fall back to
+   the name for lists that came from different sources.               */
+function matchingYears(cat, prevName){
+  const out = [];
+  const key = (prevName||cat.name||"").trim().toLowerCase();
+  Object.keys(data.years).sort().forEach(y=>{
+    if(y===curYear) return;
+    const hit = (data.years[y].categories||[]).find(x=>
+      x.id===cat.id || (x.name||"").trim().toLowerCase()===key);
+    if(hit) out.push({year:y, cat:hit});
+  });
+  return out;
+}
+/* Generic "do this in other years too?" prompt. */
+function openApplyToYearsModal(o){
+  const root = $("#modalRoot");
+  const close = ()=> root.innerHTML="";
+  const overlay = el("div",{class:"overlay", onclick:e=>{ if(e.target===overlay) close(); }});
+  const modal = el("div",{class:"modal", role:"dialog","aria-modal":"true"});
+  modal.append(el("h2",{}, o.title));
+  modal.append(el("div",{class:"hint",style:"margin-bottom:12px"}, o.hint));
+
+  const boxes = {};
+  o.matches.forEach(m=>{
+    const cb = el("input",{type:"checkbox"});
+    cb.checked = true;
+    boxes[m.year] = cb;
+    const filled = Object.keys(m.cat.amounts||{}).length;
+    modal.append(el("label",{style:"display:flex;align-items:center;gap:8px;font-size:13px;margin:5px 0;cursor:pointer"},
+      cb, el("span",{style:"flex:1"}, m.year, " — ", el("span",{class:"hint"}, m.cat.name)),
+      el("span",{class:"hint"}, filled ? filled+" month"+(filled===1?"":"s")+" filled" : "no amounts")));
+  });
+
+  const foot = el("div",{class:"modalfoot"});
+  foot.append(el("button",{class:"ghost",onclick:()=>{
+    Object.values(boxes).forEach(b=> b.checked = !Object.values(boxes).every(x=>x.checked));
+  }},"Toggle all"));
+  foot.append(el("span",{class:"spacer"}));
+  foot.append(el("button",{onclick:close}, o.skipLabel || "Only "+curYear));
+  foot.append(el("button",{class: o.danger ? "danger" : "primary", onclick:()=>{
+    const years = o.matches.filter(m=> boxes[m.year].checked);
+    close();
+    if(!years.length) return;
+    o.apply(years);
+    save(); renderHeader(); render();
+    toast(o.doneLabel.replace("{n}", years.length).replace("{y}", years.map(m=>m.year).join(", ")));
+  }}, o.actionLabel));
+  modal.append(foot);
+  overlay.append(modal); root.append(overlay);
+}
+
+/* ---------- category modal ---------- */
+function openCategoryModal(catId, asStatement){
+  const yr = data.years[curYear];
+  let c = catId ? yr.categories.find(x=>x.id===catId) : null;
+  const isNew = !c;
+  if(isNew){
+    c = {id:uid("cat"), name:"", dueDay:"", kind: asStatement?"statement":"normal", onCard:null,
+         split:{mode:"even"}, amounts:{}};
+  }
+  const work = JSON.parse(JSON.stringify(c));
+
+  const root = $("#modalRoot");
+  const close = ()=> root.innerHTML="";
+  const overlay = el("div",{class:"overlay", onclick:(e)=>{ if(e.target===overlay) close(); }});
+  const modal = el("div",{class:"modal",role:"dialog","aria-modal":"true"});
+
+  modal.append(el("h2",{}, isNew ? (asStatement?"New card statement":"New expense") : "Edit “"+c.name+"”"));
+
+  const nameIn = el("input",{type:"text",value:work.name,placeholder:"e.g. Mortgage",oninput:e=>work.name=e.target.value});
+  modal.append(el("div",{class:"field"}, el("label",{},"Name"), nameIn));
+
+  const dueIn = el("input",{type:"text",value:work.dueDay||"",placeholder:"e.g. 1st, 15th, quarterly",oninput:e=>work.dueDay=e.target.value});
+  modal.append(el("div",{class:"field"}, el("label",{},"Due (optional)"), dueIn));
+
+  // split controls
+  const splitBox = el("div",{class:"field"});
+  splitBox.append(el("label",{},"Who this belongs to"));
+  const radios = el("div",{class:"radios"});
+  const mkRadio = (val, labelNode, checked)=>{
+    const r = el("input",{type:"radio",name:"splitmode"});
+    r.checked = checked;
+    r.addEventListener("change",()=>{ work.split.mode=val; syncSplitUI(); });
+    return el("label",{}, r, labelNode);
+  };
+  const soloSel = el("select",{onchange:e=>{work.split.personId=e.target.value;}});
+  data.people.forEach(p=> soloSel.append(el("option",{value:p.id, selected: work.split.personId===p.id?"":null},p.name)));
+  if(work.split.mode==="solo" && !work.split.personId) work.split.personId = data.people[0].id;
+  soloSel.value = work.split.personId || data.people[0].id;
+
+  const pctInputs = {};
+  const customBox = el("div",{});
+  data.people.forEach((p,i)=>{
+    const start = work.split.pct?.[p.id] ?? Math.round(100/data.people.length);
+    const inp = el("input",{type:"number",min:"0",max:"100",step:"0.5",value:start,
+      oninput:e=>{ work.split.pct = work.split.pct||{}; work.split.pct[p.id]=Number(e.target.value||0); pctNote(); }});
+    pctInputs[p.id]=inp;
+    customBox.append(el("div",{class:"pctrow"}, el("span",{class:"dot",style:`display:inline-block;width:9px;height:9px;border-radius:50%;background:${p.color}`}), el("span",{style:"width:80px"},p.name), inp, el("span",{class:"hint"},"%")));
+  });
+  const pctMsg = el("div",{class:"hint",style:"margin-left:26px"});
+  function pctNote(){
+    let t=0; data.people.forEach(p=> t+=Number(pctInputs[p.id].value||0));
+    pctMsg.textContent = Math.abs(t-100)<0.01 ? "" : "Adds up to "+t+"% — shares will be scaled to 100%.";
+  }
+  customBox.append(pctMsg);
+
+  radios.append(
+    mkRadio("even", document.createTextNode("Split evenly"), work.split.mode==="even"),
+    mkRadio("solo", el("span",{},"Only ", soloSel), work.split.mode==="solo"),
+    mkRadio("custom", document.createTextNode("Custom percentages"), work.split.mode==="custom"),
+  );
+  splitBox.append(radios, customBox);
+  modal.append(splitBox);
+  function syncSplitUI(){
+    soloSel.disabled = work.split.mode!=="solo";
+    customBox.style.display = work.split.mode==="custom" ? "" : "none";
+    if(work.split.mode==="solo" && !work.split.personId) work.split.personId = soloSel.value;
+    if(work.split.mode==="custom"){ work.split.pct = work.split.pct||{}; data.people.forEach(p=> work.split.pct[p.id]=Number(pctInputs[p.id].value||0)); pctNote(); }
+  }
+  syncSplitUI();
+
+  // card linkage (normal categories only)
+  if(work.kind==="normal"){
+    const stmts = yr.categories.filter(x=>x.kind==="statement" && x.id!==work.id);
+    if(stmts.length){
+      const sel = el("select",{onchange:e=> work.onCard = e.target.value||null});
+      sel.append(el("option",{value:""},"No — billed on its own"));
+      stmts.forEach(s=> sel.append(el("option",{value:s.id, selected: work.onCard===s.id?"":null},"Yes — part of "+s.name)));
+      sel.value = work.onCard||"";
+      modal.append(el("div",{class:"field"}, el("label",{},"Paid on a card statement?"), sel,
+        el("div",{class:"hint"},"Items on a card are tracked and split individually; the statement's leftover shows as “Other on …”. Only the statement counts toward the grand total, so nothing is double-counted.")));
+    }
+  } else {
+    modal.append(el("div",{class:"field"}, el("div",{class:"hint"},"This is a card statement: enter the full statement balance each month. Any expenses you mark as “part of” this card become its itemized breakdown.")));
+  }
+
+  // reorder + delete
+  const foot = el("div",{class:"modalfoot"});
+  if(!isNew){
+    const idx = yr.categories.findIndex(x=>x.id===c.id);
+    foot.append(
+      el("button",{title:"Move up",disabled: idx===0?"":null,onclick:()=>{ if(idx>0){ yr.categories.splice(idx,1); yr.categories.splice(idx-1,0,c); save(); close(); render(); }}},"↑"),
+      el("button",{title:"Move down",disabled: idx===yr.categories.length-1?"":null,onclick:()=>{ if(idx<yr.categories.length-1){ yr.categories.splice(idx,1); yr.categories.splice(idx+1,0,c); save(); close(); render(); }}},"↓"),
+      el("button",{class:"danger",onclick:()=>{
+        const filled = Object.keys(c.amounts||{}).length;
+        if(confirm("Delete “"+c.name+"” from "+curYear+"?"+
+           (filled? "\n\n"+filled+" filled month"+(filled===1?"":"s")+" will be removed." : ""))){
+          const gone = c, matches = matchingYears(gone, gone.name);
+          yr.categories.forEach(x=>{ if(x.onCard===gone.id) x.onCard=null; });
+          data.years[curYear].categories = yr.categories.filter(x=>x.id!==gone.id);
+          save(); close(); render();
+          if(matches.length) openApplyToYearsModal({
+            title:"Delete “"+gone.name+"” from other years too?",
+            hint:"It's gone from "+curYear+". These years still have it — deleting removes their amounts as well.",
+            matches, actionLabel:"Delete from selected", danger:true,
+            skipLabel:"Keep the others",
+            doneLabel:"Deleted from {y}.",
+            apply:(years)=>{
+              years.forEach(({year,cat})=>{
+                const list = data.years[year].categories;
+                list.forEach(x=>{ if(x.onCard===cat.id) x.onCard=null; });
+                data.years[year].categories = list.filter(x=>x!==cat);
+              });
+            }});
+        }}},"Delete")
+    );
+  }
+  foot.append(el("span",{class:"spacer"}));
+  foot.append(el("button",{onclick:close},"Cancel"));
+  foot.append(el("button",{class:"primary",onclick:()=>{
+    if(!work.name.trim()){ nameIn.focus(); return; }
+    const prev = isNew ? null : {name:c.name, dueDay:c.dueDay, kind:c.kind, onCard:c.onCard,
+                                 split:JSON.stringify(c.split||{})};
+    Object.assign(c, work, {name: work.name.trim(), dueDay: (work.dueDay||"").trim()||null});
+    if(isNew) yr.categories.push(c);
+    save(); close(); render();
+
+    // Settings like the split or the name are usually meant for every year,
+    // but the amounts never are — so we offer, per change, rather than assume.
+    if(prev){
+      const changed = prev.name!==c.name || prev.dueDay!==c.dueDay || prev.kind!==c.kind ||
+                      prev.onCard!==c.onCard || prev.split!==JSON.stringify(c.split||{});
+      if(changed){
+        const matches = matchingYears(c, prev.name);
+        if(matches.length) openApplyToYearsModal({
+          title:"Apply these changes to other years?",
+          hint: (prev.name!==c.name ? "“"+prev.name+"” is now “"+c.name+"” in "+curYear+". " : "Updated in "+curYear+". ")
+                + "Amounts are never touched — only the name, due day, split and card setting.",
+          matches, actionLabel:"Apply to selected",
+          doneLabel:"Updated in {y}.",
+          apply:(years)=>{
+            years.forEach(({year,cat})=>{
+              cat.name = c.name; cat.dueDay = c.dueDay; cat.kind = c.kind;
+              cat.split = JSON.parse(JSON.stringify(c.split||{mode:"even"}));
+              // only link to a statement that actually exists in that year
+              cat.onCard = (c.onCard && data.years[year].categories.some(x=>x.id===c.onCard))
+                ? c.onCard : (c.onCard ? cat.onCard : null);
+            });
+          }});
+      }
+    }
+  }}, isNew?"Add":"Save"));
+  modal.append(foot);
+  overlay.append(modal); root.append(overlay);
+  nameIn.focus();
+}
+
+/* ---------- split purchases view ---------- */
+function renderSplits(root){
+  const yr = data.years[curYear];
+  const R = computeYear(curYear);
+  const panel = el("div",{class:"panel splits"});
+  const table = el("table");
+  table.append(el("thead",{}, el("tr",{},
+    el("th",{},"Month"), el("th",{},"Day"), el("th",{},"Item"), el("th",{},"Cost"),
+    el("th",{},"Paid by"), el("th",{},"Other's share %"), el("th",{},"They owe"),
+    el("th",{},"Notes"), el("th",{},"")
+  )));
+  const tbody = el("tbody");
+  (yr.splits||[]).forEach(s=>{
+    const tr = el("tr");
+    const monSel = el("select",{class:"w-md",onchange:e=>{s.month=Number(e.target.value);save();render();}});
+    MONTHS.forEach((m,i)=> monSel.append(el("option",{value:i+1, selected: Number(s.month)===i+1?"":null},m)));
+    const paySel = el("select",{class:"w-md",onchange:e=>{s.paidBy=e.target.value;save();render();}});
+    data.people.forEach(p=> paySel.append(el("option",{value:p.id, selected:s.paidBy===p.id?"":null},p.name)));
+    const others = data.people.filter(p=>p.id!==s.paidBy);
+    const owed = Number(s.cost||0)*(Number(s.otherPct==null?50:s.otherPct)/100);
+    tr.append(
+      el("td",{},monSel),
+      el("td",{}, el("input",{class:"w-sm",type:"text",inputmode:"numeric",value:s.day||"",onchange:e=>{s.day=e.target.value;save();}})),
+      el("td",{}, el("input",{type:"text",value:s.item||"",placeholder:"What was it?",onchange:e=>{s.item=e.target.value;save();}})),
+      el("td",{}, el("input",{class:"w-sm num",type:"text",inputmode:"decimal",value: s.cost!=null?fmt(Number(s.cost)):"",onchange:e=>{const v=parseNum(e.target.value); s.cost=v==null?0:v; e.target.value=fmt(s.cost); save(); render();}})),
+      el("td",{},paySel),
+      el("td",{}, el("input",{class:"w-sm num",type:"number",min:"0",max:"100",step:"1",value: s.otherPct==null?50:s.otherPct,onchange:e=>{s.otherPct=Number(e.target.value||0);save();render();}})),
+      el("td",{class:"num"}, owed? fmt(owed) + (others.length===1? " ("+others[0].name+")":"") : ""),
+      el("td",{}, el("input",{type:"text",value:s.comments||"",onchange:e=>{s.comments=e.target.value;save();}})),
+      el("td",{}, el("button",{class:"ghost",title:"Remove",onclick:()=>{ yr.splits = yr.splits.filter(x=>x!==s); save(); render(); }},"✕"))
+    );
+    tbody.append(tr);
+  });
+  if(!(yr.splits||[]).length){
+    tbody.append(el("tr",{}, el("td",{colspan:"9",style:"padding:22px;text-align:center;color:var(--muted)"},
+      "One-off shared purchases go here — a furniture buy, vet bill, trip cost. Whoever paid is credited, and the other person's share is added to their monthly total.")));
+  }
+  table.append(tbody);
+  panel.append(table);
+  panel.append(el("div",{class:"gridfoot"}, el("button",{class:"primary",onclick:()=>{
+    yr.splits = yr.splits||[];
+    yr.splits.push({id:uid("sp"), month:(new Date()).getMonth()+1, day:"", item:"", cost:0, paidBy:data.people[0].id, otherPct:50, comments:""});
+    save(); render();
+  }},"+ Add split purchase")));
+
+  // settlement summary
+  const lines = [];
+  for(let m=1;m<=12;m++) (R.owedPairs[m]||[]).forEach(o=> lines.push(MON_ABBR[m-1]+": "+person(o.from).name+" owes "+person(o.to).name+" "+money(o.amt)));
+  panel.append(el("div",{class:"settle"}, lines.length ? el("span",{},"Settle up — ", el("b",{},lines.join("  ·  "))) : "Nothing owed between you from split purchases this year."));
+  root.append(panel);
+}
+
+/* ---------- summary view ---------- */
+function renderSummary(root){
+  const yr = data.years[curYear];
+  const R = computeYear(curYear);
+  const now = new Date();
+  const isCurrentYear = String(now.getFullYear())===curYear;
+
+  // top cards: per person projected yearly + household total
+  let ytdTotal=0, monthsWithData=0;
+  for(let m=1;m<=12;m++){ if(R.monthTotal[m]>0.004){monthsWithData++;} ytdTotal+=R.monthTotal[m]; }
+  const avgMonth = monthsWithData? ytdTotal/monthsWithData : 0;
+  const cards = el("div",{class:"cards"});
+  cards.append(el("div",{class:"statcard"}, el("div",{class:"lbl"},curYear+" household total"),
+    el("div",{class:"val num"},money(ytdTotal)), el("div",{class:"sub"},"avg "+money(avgMonth)+" over "+monthsWithData+" mo · projected "+money(avgMonth*12))));
+  data.people.forEach(p=>{
+    let s=0, cnt=0; for(let m=1;m<=12;m++){ s+=R.personMonth[p.id][m]; if(Math.abs(R.personMonth[p.id][m])>0.004) cnt++; }
+    const avg = cnt? s/cnt:0;
+    cards.append(el("div",{class:"statcard"},
+      el("div",{class:"lbl",style:"color:"+p.color},p.name),
+      el("div",{class:"val num"},money(s)),
+      el("div",{class:"sub"},"avg "+money(avg)+"/mo · projected "+money(avg*12))));
+  });
+
+  const panel = el("div",{class:"panel summary"});
+  panel.append(cards);
+  const table = el("table");
+  const hr = el("tr",{}, el("th",{},"Expense"), el("th",{},"YTD"), el("th",{},"Avg / month"), el("th",{},"Projected yearly"));
+  data.people.forEach(p=> hr.append(el("th",{},p.name+" / yr")));
+  table.append(el("thead",{},hr));
+  const tbody = el("tbody");
+
+  yr.categories.forEach(c=>{
+    const fr = splitFractions(c.split);
+    let ytd=0,cnt=0;
+    for(let m=1;m<=12;m++){ const v=Number(c.amounts?.[m]||0); if(c.amounts && (m in c.amounts)){cnt++;} ytd+=v; }
+    const avg = cnt? ytd/cnt : 0;
+    const proj = avg*12;
+    const tr = el("tr");
+    tr.append(el("td",{}, c.name + (c.kind==="statement"?" (statement)": c.onCard?" *":"")),
+      el("td",{class:"num"},fmt(ytd,true)), el("td",{class:"num"},fmt(avg,true)), el("td",{class:"num"},fmt(proj,true)));
+    data.people.forEach(p=> tr.append(el("td",{class:"num"},fmt(proj*fr[p.id],true))));
+    tbody.append(tr);
+  });
+  const trT = el("tr",{class:"totalrow"});
+  trT.append(el("td",{},"Total"), el("td",{class:"num"},fmt(ytdTotal)), el("td",{class:"num"},fmt(avgMonth)), el("td",{class:"num"},fmt(avgMonth*12)));
+  data.people.forEach(p=>{
+    let s=0,cnt=0; for(let m=1;m<=12;m++){ s+=R.personMonth[p.id][m]; if(Math.abs(R.personMonth[p.id][m])>0.004)cnt++; }
+    trT.append(el("td",{class:"num"},fmt(cnt? s/cnt*12:0)));
+  });
+  tbody.append(trT);
+  table.append(tbody);
+  panel.append(table);
+  panel.append(el("div",{class:"settle hint"},"* itemized on a card statement — already inside the statement total, listed for category tracking and per-person splits. Averages use months that have an entry"+(isCurrentYear?", so projections firm up as the year fills in.":".")));
+  root.append(panel);
+}
+
+/* ---------- years ---------- */
+function yearStats(y){
+  const yr = data.years[y] || {};
+  const cats = (yr.categories||[]).length;
+  const splits = (yr.splits||[]).length;
+  let filled = 0;
+  (yr.categories||[]).forEach(c=> filled += Object.keys(c.amounts||{}).length);
+  return {cats, splits, filled};
+}
+function deleteYear(y){
+  if(Object.keys(data.years).length < 2){
+    toast("That's the only year — add another before deleting this one.");
+    return false;
+  }
+  const s = yearStats(y);
+  if(!confirm(
+    "Delete "+y+" entirely?\n\n"+
+    s.cats+" expense row"+(s.cats===1?"":"s")+"\n"+
+    s.filled+" filled month value"+(s.filled===1?"":"s")+"\n"+
+    s.splits+" split purchase"+(s.splits===1?"":"s")+"\n\n"+
+    "Other years are unaffected. This can't be undone from inside the app — "+
+    "if you've synced, the previous version is still in your sync file until you sync again."
+  )) return false;
+  delete data.years[y];
+  if(curYear===y) curYear = Object.keys(data.years).sort().pop();
+  save(); renderHeader(); render();
+  toast(y+" deleted.");
+  return true;
+}
+
+/* ---------- settings ---------- */
+function openSettings(){
+  const root = $("#modalRoot");
+  const close = ()=> root.innerHTML="";
+  const overlay = el("div",{class:"overlay",onclick:e=>{if(e.target===overlay) close();}});
+  const modal = el("div",{class:"modal"});
+  modal.append(el("h2",{},"Settings"));
+
+  const titleIn = el("input",{type:"text",value:data.title||"",onchange:e=>{data.title=e.target.value.trim()||"Household Expenses"; save(); renderHeader();}});
+  modal.append(el("div",{class:"field"}, el("label",{},"Household name"), titleIn));
+
+  modal.append(el("div",{class:"field"}, el("label",{},"People")));
+  data.people.forEach(p=>{
+    const nameIn = el("input",{type:"text",value:p.name,style:"flex:1",onchange:e=>{p.name=e.target.value.trim()||p.name; save(); renderHeader(); }});
+    const row = el("div",{style:"display:flex;gap:8px;align-items:center;margin-bottom:6px"},
+      el("input",{type:"color",value:p.color,style:"width:34px;height:30px;padding:2px",onchange:e=>{p.color=e.target.value;save();renderHeader();render();}}),
+      nameIn);
+    if(data.people.length>2){
+      row.append(el("button",{class:"danger",onclick:()=>{
+        if(confirm("Remove "+p.name+"? Their custom split shares will be redistributed.")){
+          data.people = data.people.filter(x=>x.id!==p.id); save(); close(); openSettings(); renderHeader(); render();
+        }}},"✕"));
+    }
+    modal.append(row);
+  });
+  modal.append(el("button",{onclick:()=>{
+    const nm = prompt("Name of the new person:"); if(!nm) return;
+    data.people.push({id:uid("p"),name:nm.trim(),color:PALETTE[data.people.length%PALETTE.length]});
+    save(); close(); openSettings(); renderHeader(); render();
+  }},"+ Add person"));
+
+  /* ----- years section ----- */
+  modal.append(el("hr",{class:"divider"}));
+  modal.append(el("h2",{style:"font-size:15px;margin:0 0 8px"},"Years"));
+  const onlyOne = Object.keys(data.years).length < 2;
+  Object.keys(data.years).sort().forEach(y=>{
+    const s = yearStats(y);
+    modal.append(el("div",{style:"display:flex;align-items:center;gap:10px;margin-bottom:5px"},
+      el("span",{style:"font-weight:500;min-width:46px"}, y),
+      el("span",{class:"hint",style:"flex:1"},
+        s.cats+" expense"+(s.cats===1?"":"s")+" · "+s.filled+" value"+(s.filled===1?"":"s")+
+        (s.splits? " · "+s.splits+" split"+(s.splits===1?"":"s") : "")),
+      y===curYear ? el("span",{class:"hint"},"open") : null,
+      el("button",{class:"danger", disabled: onlyOne?"":null,
+        title: onlyOne ? "The only year can't be deleted" : "Delete "+y+" and everything in it",
+        onclick:()=>{ if(deleteYear(y)){ close(); openSettings(); } }},"Delete")));
+  });
+  modal.append(el("div",{class:"hint",style:"margin:8px 0 0"},
+    "Use “+” next to the year tabs to start a new year — it can copy this year's expense list without the amounts."));
+
+  /* ----- sync section ----- */
+  modal.append(el("hr",{class:"divider"}));
+  modal.append(el("h2",{style:"font-size:15px;margin:0 0 8px"},"Sync between computers"));
+  modal.append(el("div",{class:"hint",style:"margin-bottom:12px"},
+    "Point this at one JSON file kept in iCloud Drive. Sync writes your changes to it; Load latest pulls the other computer's. iCloud handles moving the file — the app only ever reads and writes that one file."));
+
+  const devIn = el("input",{type:"text",value:deviceName(),style:"flex:1",
+    onchange:e=>{ setDeviceName(e.target.value); toast("This computer is now called “"+deviceName()+"”."); }});
+  modal.append(el("div",{class:"field"}, el("label",{},"Name for this computer (shown when copies disagree)"), devIn));
+
+  const statusLines = el("div",{class:"hint",style:"margin-bottom:12px;line-height:1.7"});
+  statusLines.append(el("div",{},"File: ", el("b",{},sync.fileName || "not set yet")));
+  statusLines.append(el("div",{},"Last pushed: " + whenText(sync.lastPush)));
+  statusLines.append(el("div",{},"Last loaded: " + whenText(sync.lastPull)));
+  statusLines.append(el("div",{}, dirty ? "Status: unsynced changes on this computer" : sync.configured ? "Status: up to date" : "Status: sync not set up"));
+  modal.append(statusLines);
+
+  if(HAS_FS_ACCESS){
+    const autoWrap = el("label",{style:"display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:6px;cursor:pointer"});
+    const autoCb = el("input",{type:"checkbox"});
+    autoCb.checked = !!sync.auto;
+    autoCb.addEventListener("change",()=>{
+      sync.auto = autoCb.checked; saveSyncState();
+      toast(sync.auto ? "Auto-sync on — edits write to the file a few seconds after you stop typing."
+                      : "Auto-sync off — use the Sync button.");
+      scheduleAutoPush();
+    });
+    autoWrap.append(autoCb, document.createTextNode("Write to the sync file automatically after each change"));
+    modal.append(autoWrap);
+    modal.append(el("div",{class:"hint",style:"margin:0 0 12px 26px"},
+      "Only sync automatically on the computer you use most. If both computers auto-sync while both are open, iCloud will produce conflicted copies."));
+  } else {
+    modal.append(el("div",{class:"hint",style:"margin-bottom:12px;padding:8px 10px;background:#FBF3EE;border-radius:8px"},
+      "This browser (Safari or Firefox) can't write to a file directly, so Sync saves to your downloads folder instead — move that file into iCloud Drive, replacing the old one. In Chrome, Edge, or Arc the app writes the iCloud file in place, no downloads involved."));
+  }
+
+  const syncFoot = el("div",{class:"modalfoot",style:"margin-top:0"});
+  syncFoot.append(el("button",{class:"primary",onclick:()=>{ close(); pushToFile(); }},"Sync now"));
+  syncFoot.append(el("button",{onclick:()=>{ close(); pullFromFile(); }},"Load latest"));
+  if(HAS_FS_ACCESS) syncFoot.append(el("button",{onclick:()=>{ close(); chooseSyncFile(); }},"Choose file…"));
+  if(sync.configured) syncFoot.append(el("button",{class:"ghost",onclick:()=>{ close(); forgetSyncFile(); }},"Forget"));
+  modal.append(syncFoot);
+
+  modal.append(el("hr",{class:"divider"}));
+  modal.append(el("div",{class:"hint",style:"margin-bottom:10px"},
+    "Your working copy lives in this browser's local storage. The sync file is the shared copy and doubles as your backup — clearing this browser's site data would erase the local copy, but not the file."));
+  const foot = el("div",{class:"modalfoot"});
+  foot.append(el("button",{onclick:()=>{exportData();}},"Export copy"));
+  foot.append(el("button",{onclick:()=>{$("#fileInput").click();}},"Import file"));
+  foot.append(el("span",{class:"spacer"}));
+  foot.append(el("button",{class:"danger",onclick:()=>{
+    if(confirm("Erase ALL data from this browser? Export first if you want a backup.")){
+      localStorage.removeItem(LS_KEY); data=null; curYear=null; dirty=false;
+      close(); render(); renderHeader(); updateSyncUI(); renderSyncBar();
+    }}},"Erase everything"));
+  modal.append(foot);
+  modal.append(el("div",{class:"modalfoot"}, el("span",{class:"spacer"}), el("button",{class:"primary",onclick:close},"Done")));
+  overlay.append(modal); root.append(overlay);
+}
+
+/* =====================================================================
+   SYNC — keep one JSON file (e.g. in iCloud Drive) as the shared copy.
+
+   localStorage stays the working copy so nothing breaks offline. The
+   file is the exchange medium: push your edits to it, pull the other
+   computer's edits from it. Every save stamps data.sync.rev, and we
+   remember the rev we last exchanged (sync.baseRev). If the file's rev
+   is ahead of baseRev AND we have local edits, both sides changed and
+   you get asked which one wins rather than silently losing work.
+
+   Chrome/Edge/Arc: the file handle is remembered, so syncing is one
+   click and can be automatic. Safari/Firefox lack the File System
+   Access API, so pushing falls back to a download and pulling uses the
+   file picker.
+   ===================================================================== */
+
+function defaultFileName(){
+  return (data?.title||"expenses").replace(/[^a-z0-9]+/gi,"-").toLowerCase()+"-data.json";
+}
+function deviceName(){
+  let n = null;
+  try{ n = localStorage.getItem(DEVICE_KEY); }catch(e){}
+  if(!n){
+    const ua = navigator.userAgent;
+    n = /Macintosh/.test(ua) ? "Mac" : /iPhone|iPad/.test(ua) ? "iOS" : /Windows/.test(ua) ? "PC" : "This computer";
+    n += " · " + Math.random().toString(36).slice(2,5);
+    try{ localStorage.setItem(DEVICE_KEY, n); }catch(e){}
+  }
+  return n;
+}
+function setDeviceName(n){
+  n = (n||"").trim(); if(!n) return;
+  try{ localStorage.setItem(DEVICE_KEY, n); }catch(e){}
+}
+function whenText(iso){
+  if(!iso) return "never";
+  const d = new Date(iso); if(isNaN(d)) return "unknown";
+  const mins = Math.round((Date.now()-d.getTime())/60000);
+  if(mins < 1) return "just now";
+  if(mins < 60) return mins+" min ago";
+  const sameDay = d.toDateString()===new Date().toDateString();
+  return (sameDay?"today ":d.toLocaleDateString(undefined,{month:"short",day:"numeric"})+" ")
+    + d.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
+}
+
+/* ---- remembering the file handle (Chromium only) ---- */
+const IDB_NAME="hem-sync", IDB_STORE="handles";
+function idbOpen(){
+  return new Promise((res,rej)=>{
+    const r = indexedDB.open(IDB_NAME,1);
+    r.onupgradeneeded = ()=> r.result.createObjectStore(IDB_STORE);
+    r.onsuccess = ()=> res(r.result);
+    r.onerror  = ()=> rej(r.error);
+  });
+}
+async function idbGet(k){
+  try{
+    const db = await idbOpen();
+    return await new Promise((res,rej)=>{
+      const q = db.transaction(IDB_STORE,"readonly").objectStore(IDB_STORE).get(k);
+      q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error);
+    });
+  }catch(e){ return null; }
+}
+async function idbSet(k,v){
+  try{
+    const db = await idbOpen();
+    await new Promise((res,rej)=>{
+      const q = db.transaction(IDB_STORE,"readwrite").objectStore(IDB_STORE).put(v,k);
+      q.onsuccess=()=>res(); q.onerror=()=>rej(q.error);
+    });
+  }catch(e){}
+}
+async function idbDel(k){
+  try{
+    const db = await idbOpen();
+    await new Promise((res,rej)=>{
+      const q = db.transaction(IDB_STORE,"readwrite").objectStore(IDB_STORE).delete(k);
+      q.onsuccess=()=>res(); q.onerror=()=>rej(q.error);
+    });
+  }catch(e){}
+}
+
+/* ---- file plumbing ---- */
+async function ensurePermission(h, mode){
+  try{
+    const opts = {mode: mode==="read" ? "read" : "readwrite"};
+    if(await h.queryPermission(opts) === "granted") return true;
+    return await h.requestPermission(opts) === "granted";
+  }catch(e){ return false; }
+}
+async function pickSyncFile(kind){
+  const types = [{description:"Expense data (JSON)", accept:{"application/json":[".json"]}}];
+  if(kind==="open"){
+    const [h] = await window.showOpenFilePicker({types, multiple:false});
+    return h||null;
+  }
+  return await window.showSaveFilePicker({suggestedName: sync.fileName||defaultFileName(), types});
+}
+async function readHandle(h){
+  const f = await h.getFile();
+  const txt = await f.text();
+  if(!txt.trim()) return null;
+  return JSON.parse(txt);
+}
+function validData(o){
+  return !!(o && o.app==="household-expense-manager" && o.years && o.people);
+}
+function downloadJSON(text, name){
+  const a = el("a",{href:URL.createObjectURL(new Blob([text],{type:"application/json"})), download:name});
+  document.body.append(a); a.click(); a.remove();
+}
+function pickViaInput(){
+  return new Promise(res=>{
+    const inp = $("#syncPullInput");
+    inp.onchange = ()=>{
+      const f = inp.files[0]; inp.value="";
+      if(!f) return res(null);
+      const rd = new FileReader();
+      rd.onload = ()=>{ try{ const o = JSON.parse(rd.result); o.__name = f.name; res(o); }catch(e){ res(null); } };
+      rd.onerror = ()=> res(null);
+      rd.readAsText(f);
+    };
+    inp.click();
+  });
+}
+
+/* ---- push / pull ---- */
+function markSynced(name, rev){
+  sync.fileName = name || sync.fileName;
+  sync.baseRev = rev;
+  sync.configured = true;
+  dirty = false;
+  pullPrompted = true;   // we've just exchanged with the file, so nothing to nag about
+  saveSyncState();
+  updateSyncUI();
+}
+async function pushToFile(opts={}){
+  if(!data){ toast("Nothing to sync yet."); return false; }
+  data.sync = data.sync || {rev:1};
+  if(!data.sync.rev) data.sync.rev = 1;
+  const payload = JSON.stringify(data,null,1);
+
+  if(HAS_FS_ACCESS){
+    try{
+      if(!fileHandle){
+        fileHandle = await pickSyncFile("save");
+        if(!fileHandle) return false;
+        await idbSet("syncFile", fileHandle);
+      }
+      if(!await ensurePermission(fileHandle,"readwrite")){
+        toast("Permission to write that file was declined."); return false;
+      }
+      if(!opts.force){
+        let remote = null;
+        try{ remote = await readHandle(fileHandle); }catch(e){ remote = null; }
+        if(validData(remote) && (remote.sync?.rev||0) > (sync.baseRev||0)){
+          openConflictModal(remote, "push");
+          return false;
+        }
+      }
+      const w = await fileHandle.createWritable();
+      await w.write(payload); await w.close();
+      sync.lastPush = new Date().toISOString();
+      markSynced(fileHandle.name, data.sync.rev);
+      toast("Synced to " + fileHandle.name + " — iCloud will carry it to your other computer.");
+      return true;
+    }catch(e){
+      if(e && e.name==="AbortError") return false;
+      console.error(e);
+      toast("Couldn't write the sync file: " + (e.message||e));
+      return false;
+    }
+  }
+
+  // Safari / Firefox fallback
+  const name = sync.fileName || defaultFileName();
+  downloadJSON(payload, name);
+  sync.lastPush = new Date().toISOString();
+  markSynced(name, data.sync.rev);
+  toast("Saved to your downloads folder as " + name + " — replace the copy in iCloud Drive with it.");
+  return true;
+}
+async function pullFromFile(opts={}){
+  let remote = null, name = null;
+  if(HAS_FS_ACCESS){
+    try{
+      if(!fileHandle){
+        fileHandle = await pickSyncFile("open");
+        if(!fileHandle) return false;
+        await idbSet("syncFile", fileHandle);
+      }
+      if(!await ensurePermission(fileHandle,"read")){
+        toast("Permission to read that file was declined."); return false;
+      }
+      remote = await readHandle(fileHandle);
+      name = fileHandle.name;
+    }catch(e){
+      if(e && e.name==="AbortError") return false;
+      console.error(e); toast("Couldn't read the sync file."); return false;
+    }
+  } else {
+    remote = await pickViaInput();
+    if(!remote) return false;
+    name = remote.__name; delete remote.__name;
+  }
+
+  if(!validData(remote)){ toast("That file couldn't be read as expense data."); return false; }
+  const rRev = remote.sync?.rev || 0;
+
+  // No local data at all — just take the file.
+  if(!data || !Object.keys(data.years||{}).length){ adoptRemote(remote, name); return true; }
+
+  if(dirty && rRev > (sync.baseRev||0)){ openConflictModal(remote, "pull"); return false; }
+  if(rRev <= (sync.baseRev||0)){
+    if(dirty){
+      toast("The file is behind this computer — use Sync to push your changes up.");
+    } else {
+      sync.lastPull = new Date().toISOString();
+      markSynced(name, sync.baseRev);
+      pullPrompted = true;
+      toast("Already up to date.");
+    }
+    updateSyncUI(); renderSyncBar();
+    return true;
+  }
+  adoptRemote(remote, name);
+  return true;
+}
+function adoptRemote(remote, name){
+  data = remote;
+  const ys = Object.keys(data.years).sort();
+  curYear = (data.lastYear && data.years[data.lastYear]) ? data.lastYear : (ys[ys.length-1] || null);
+  try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(e){}
+  sync.lastPull = new Date().toISOString();
+  markSynced(name, data.sync?.rev || 0);
+  pullPrompted = true;
+  $("#modalRoot").innerHTML = "";
+  renderHeader(); render(); renderSyncBar();
+  toast("Loaded the latest from " + (name||"the sync file") +
+        (data.sync?.device ? " (last edited on " + data.sync.device + ")" : "") + ".");
+}
+
+/* ---- conflict resolution ---- */
+function openConflictModal(remote, mode){
+  const root = $("#modalRoot");
+  const close = ()=> root.innerHTML="";
+  const overlay = el("div",{class:"overlay", onclick:e=>{ if(e.target===overlay) close(); }});
+  const modal = el("div",{class:"modal", role:"dialog","aria-modal":"true"});
+  modal.append(el("h2",{},"Both copies changed"));
+  modal.append(el("div",{class:"hint",style:"margin-bottom:12px"},
+    "This computer and the sync file were each edited since they last matched. Nothing has been overwritten. Pick the copy to keep — the other is downloaded as a backup first, so you can recover anything from it."));
+
+  const countOf = o => {
+    let cats=0, splits=0;
+    Object.values(o.years||{}).forEach(y=>{ cats += (y.categories||[]).length; splits += (y.splits||[]).length; });
+    return cats+" expense"+(cats===1?"":"s")+" · "+splits+" split purchase"+(splits===1?"":"s");
+  };
+  const mkBox = (label, obj, onPick)=> el("div",{class:"conflictbox", onclick:onPick},
+    el("div",{class:"who"}, label),
+    el("div",{class:"when"}, "edited " + whenText(obj.sync?.modified) +
+      (obj.sync?.device ? " on " + obj.sync.device : "")),
+    el("div",{class:"what"}, countOf(obj) + " · " + Object.keys(obj.years||{}).length + " year(s)"));
+
+  modal.append(mkBox("Keep this computer's copy", data, async ()=>{
+    downloadJSON(JSON.stringify(remote,null,1), "sync-file-backup-"+new Date().toISOString().slice(0,10)+".json");
+    close();
+    sync.baseRev = remote.sync?.rev || 0;      // acknowledge what we're overwriting
+    data.sync.rev = Math.max(data.sync.rev||0, (remote.sync?.rev||0)) + 1;
+    data.sync.modified = new Date().toISOString();
+    data.sync.device = deviceName();
+    saveSyncState();
+    await pushToFile({force:true});
+  }));
+  modal.append(mkBox("Use the sync file's copy", remote, ()=>{
+    downloadJSON(JSON.stringify(data,null,1), "this-computer-backup-"+new Date().toISOString().slice(0,10)+".json");
+    close();
+    adoptRemote(remote, sync.fileName || (fileHandle && fileHandle.name));
+  }));
+
+  modal.append(el("div",{class:"modalfoot"}, el("span",{class:"spacer"}),
+    el("button",{onclick:close},"Decide later")));
+  overlay.append(modal); root.append(overlay);
+}
+
+/* ---- auto push (Chromium + opted in) ---- */
+function canAutoPush(){ return !!(sync?.auto && HAS_FS_ACCESS && fileHandle); }
+function scheduleAutoPush(){
+  if(!canAutoPush() || !dirty) return;
+  clearTimeout(autoPushTimer);
+  autoPushTimer = setTimeout(()=>{ if(dirty) pushToFile(); }, 4000);
+}
+
+/* ---- sync UI ---- */
+function updateSyncUI(){
+  const dot = $("#syncDot"), lbl = $("#syncBtnLabel"), btn = $("#btnSync");
+  if(!dot) return;
+  dot.className = "syncdot " + (!sync?.configured ? "none" : dirty ? "dirty" : "clean");
+  if(!sync?.configured){
+    lbl.textContent = "Set up sync";
+    btn.title = "Choose a JSON file in iCloud Drive to share between computers";
+  } else if(dirty){
+    lbl.textContent = "Sync";
+    btn.title = "Unsynced changes on this computer — click to write them to " + (sync.fileName||"the sync file");
+  } else {
+    lbl.textContent = "Synced";
+    btn.title = "Up to date with " + (sync.fileName||"the sync file") + " · last push " + whenText(sync.lastPush);
+  }
+  renderSyncBar();
+}
+function renderSyncBar(){
+  const bar = $("#syncBar");
+  bar.innerHTML = "";
+  if(!sync?.configured) return;
+  const needsPull = !pullPrompted;
+  const needsPush = dirty;
+  if(!needsPull && !needsPush) return;
+
+  const row = el("div",{class:"syncbar" + (needsPush ? " warn" : "")});
+  const fname = el("span",{class:"fname"}, sync.fileName||"sync file");
+
+  if(needsPull && needsPush){
+    // Both apply — say so, and lead with loading, which is the safe order.
+    row.append(el("span",{class:"msg"},
+      "You have unsynced changes, and ", fname, " may have changed on your other computer. Load first — you'll be asked what to keep if both moved."));
+    row.append(el("button",{class:"primary", onclick:()=>pullFromFile()},"Load latest"));
+    row.append(el("button",{onclick:()=>pushToFile()},"Sync mine up"));
+  } else if(needsPull){
+    row.append(el("span",{class:"msg"},
+      "Shared file ", fname,
+      sync.lastPull ? " — your other computer may have edited it since you last loaded it (" + whenText(sync.lastPull) + ")."
+                    : " — load it to pick up anything your other computer has added."));
+    row.append(el("button",{class:"primary", onclick:()=>pullFromFile()},"Load latest"));
+    row.append(el("button",{class:"ghost", onclick:()=>{ pullPrompted=true; renderSyncBar(); }},"Not now"));
+  } else {
+    row.append(el("span",{class:"msg"},
+      "Unsynced changes on this computer" + (sync.lastPush? " since " + whenText(sync.lastPush) : "") + "."));
+    row.append(el("button",{class:"primary", onclick:()=>pushToFile()},"Sync now"));
+  }
+  bar.append(row);
+  afterPaint(fitGrid);   // the bar just changed how much room the grid has
+}
+async function initSync(){
+  if(HAS_FS_ACCESS){
+    const h = await idbGet("syncFile");
+    if(h){ fileHandle = h; if(!sync.fileName) sync.fileName = h.name; }
+  }
+  updateSyncUI();
+  renderSyncBar();
+}
+async function forgetSyncFile(){
+  fileHandle = null;
+  await idbDel("syncFile");
+  sync = {fileName:null, baseRev:0, lastPush:null, lastPull:null, auto:false, configured:false};
+  dirty = false; pullPrompted = false;
+  saveSyncState(); updateSyncUI(); renderSyncBar();
+  toast("Sync file forgotten. Your data is still here in this browser.");
+}
+async function chooseSyncFile(){
+  if(!HAS_FS_ACCESS){
+    toast("This browser can't remember a file — use Sync to save and Load latest to read.");
+    return;
+  }
+  try{
+    const h = await pickSyncFile("save");
+    if(!h) return;
+    fileHandle = h;
+    await idbSet("syncFile", h);
+    sync.fileName = h.name; sync.baseRev = 0; sync.configured = true;
+    saveSyncState(); updateSyncUI(); renderSyncBar();
+    toast("Sync file set to " + h.name + ".");
+  }catch(e){ if(e && e.name!=="AbortError") toast("Couldn't set that file."); }
+}
+
+/* ---------- import / export ---------- */
+function exportData(){
+  if(!data){ toast("Nothing to export yet."); return; }
+  const blob = new Blob([JSON.stringify(data,null,1)],{type:"application/json"});
+  const a = el("a",{href:URL.createObjectURL(blob),
+    download:(data.title||"expenses").replace(/[^a-z0-9]+/gi,"-").toLowerCase()+"-"+new Date().toISOString().slice(0,10)+".json"});
+  document.body.append(a); a.click(); a.remove();
+  toast("Data file downloaded — keep it as a backup or import it in another browser.");
+}
+function importFile(file){
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    try{
+      const obj = JSON.parse(rd.result);
+      if(!obj || obj.app!=="household-expense-manager" || !obj.years || !obj.people)
+        throw new Error("not a recognized data file");
+      if(data && Object.keys(data.years||{}).length &&
+         !confirm("Replace the data currently in this browser with the imported file?")) return;
+      data = obj;
+      const ys = Object.keys(data.years).sort();
+      curYear = ys[ys.length-1] || null;
+      $("#modalRoot").innerHTML="";
+      save(); renderHeader(); render();
+      toast("Imported — "+ys.length+" year"+(ys.length===1?"":"s")+" loaded.");
+    }catch(e){
+      toast("That file couldn't be read as expense data.");
+    }
+  };
+  rd.readAsText(file);
+}
+
+/* ---------- empty state ---------- */
+function renderEmpty(root){
+  root.append(el("div",{class:"panel empty"},
+    el("h2",{},"No expense data in this browser yet"),
+    el("p",{},"If you already keep a data file in iCloud Drive, load it — this browser will then stay in sync with it. Otherwise import a one-off file or start from scratch."),
+    el("div",{style:"display:flex;gap:10px;justify-content:center;flex-wrap:wrap"},
+      el("button",{class:"primary",onclick:()=>pullFromFile()},"Load from sync file"),
+      el("button",{onclick:()=>$("#fileInput").click()},"Import data file"),
+      el("button",{onclick:()=>{
+        data = freshData();
+        const y = String(new Date().getFullYear());
+        data.years[y]=newYearObj(); curYear=y; save(); renderHeader(); render();
+      }},"Start fresh"))));
+}
+
+/* ---------- render root ---------- */
+function render(){
+  renderHeader();
+  const main = $("#main"); main.innerHTML="";
+  if(!data || !Object.keys(data.years||{}).length){ renderEmpty(main); return; }
+  if(!data.years[curYear]) curYear = Object.keys(data.years).sort().pop();
+  if(curView==="ledger") renderLedger(main);
+  else if(curView==="splits") renderSplits(main);
+  else renderSummary(main);
+}
+
+/* ---------- wire up ---------- */
+document.querySelectorAll("#viewTabs button").forEach(b=>{
+  b.addEventListener("click",()=>{ curView=b.dataset.view; render(); });
+});
+$("#btnSync").addEventListener("click",()=>{
+  if(!sync.configured && !data){ toast("Load or start some data first."); return; }
+  pushToFile();
+});
+$("#fileInput").addEventListener("change",e=>{ if(e.target.files[0]) importFile(e.target.files[0]); e.target.value=""; });
+window.addEventListener("beforeunload", e=>{
+  if(dirty){ e.preventDefault(); e.returnValue = ""; }
+});
+$("#btnSettings").addEventListener("click",()=>{ if(!data){ toast("Import or start data first."); return;} openSettings(); });
+$("#btnAddYear").addEventListener("click",()=>{
+  if(!data){ toast("Import or start data first."); return; }
+  const guess = String(Math.max(...Object.keys(data.years).map(Number), new Date().getFullYear())+ (Object.keys(data.years).length?1:0));
+  const y = prompt("New year:", guess); if(!y) return;
+  if(data.years[y]){ curYear=y; render(); return; }
+  const src = data.years[curYear];
+  const ny = newYearObj();
+  if(src && confirm("Copy this year's expense list (without amounts) into "+y+"?")){
+    ny.categories = src.categories.map(c=>({...JSON.parse(JSON.stringify(c)), amounts:{}}));
+  }
+  data.years[y]=ny; curYear=y; save(); render();
+});
+
+load();
+applyDensity();
+render();
+initSync();
+</script>
+</body>
+</html>

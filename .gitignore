@@ -1,0 +1,39 @@
+# ---------------------------------------------------------------
+# Financial data must never be committed.
+#
+# The app reads and writes JSON data files (the iCloud sync file,
+# exported backups, the starter file built from the spreadsheet).
+# Ignore every .json by default, then allow back only the fake
+# sample file. New data files are ignored automatically.
+# ---------------------------------------------------------------
+*.json
+!sample-data.json
+
+# Spreadsheet sources and exports
+*.xlsx
+*.xls
+*.csv
+*.numbers
+
+# Conflicted copies iCloud may leave beside the sync file
+*conflicted*
+* 2.html
+* 2.json
+
+# Local publishing helper. Stays out of the repo because its safety
+# check lists real vendor names, which are themselves identifying.
+publish-to-github.sh
+
+# macOS / editors
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+*.swp
+*~
+.vscode/
+.idea/
+
+# Node (only used for local testing)
+node_modules/
+package-lock.json
