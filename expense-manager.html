@@ -308,6 +308,27 @@ function load(){
 function saveSyncState(){
   try{ localStorage.setItem(SYNC_KEY, JSON.stringify(sync)); }catch(e){}
 }
+/* A cell only commits its value on change (blur or Enter), so a number
+   typed and left sitting in a focused field would never reach the data.
+   Nudge it before we persist. */
+function commitFocusedCell(){
+  const a = document.activeElement;
+  if(a && a.classList && a.classList.contains("cellin")){
+    a.dispatchEvent(new Event("change"));
+  }
+}
+/* The normal save is debounced, so closing the tab a moment after an edit
+   could drop it. Write straight through instead of waiting for the timer. */
+function flushSave(){
+  commitFocusedCell();
+  if(!data) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  try{
+    data.lastYear = curYear;
+    localStorage.setItem(LS_KEY, JSON.stringify(data));
+  }catch(e){}
+}
 /* save(true) = "quiet": persist locally without counting as a data edit.
    Used for view/year preferences, which shouldn't mark you out of sync. */
 function save(quiet){
@@ -1789,8 +1810,15 @@ $("#btnSync").addEventListener("click",()=>{
   pushData();
 });
 $("#fileInput").addEventListener("change",e=>{ if(e.target.files[0]) importFile(e.target.files[0]); e.target.value=""; });
+/* Persist locally on every way out of the page. pagehide is the reliable one
+   on iOS/Safari, where beforeunload often never fires. */
 window.addEventListener("beforeunload", e=>{
+  flushSave();
   if(dirty){ e.preventDefault(); e.returnValue = ""; }
+});
+window.addEventListener("pagehide", flushSave);
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState === "hidden") flushSave();
 });
 $("#btnSettings").addEventListener("click",()=>{ if(!data){ toast("Import or start data first."); return;} openSettings(); });
 $("#btnAddYear").addEventListener("click",()=>{
