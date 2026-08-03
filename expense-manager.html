@@ -414,13 +414,66 @@ function splitFractions(split){
   }
   return out;
 }
+/* A fixed dollar adjustment: one person always pays this much more than the
+   split alone would give them (e.g. their line on a shared phone plan).
+   Returns {personId, amount} or null. Ignored for "solo" — one person is
+   already paying the whole thing, so there is nothing to shift.            */
+function splitAdjust(split){
+  const a = split && split.adjust;
+  if(!a || !a.personId || !person(a.personId)) return null;
+  if(split.mode==="solo") return null;
+  const amount = Number(a.amount||0);
+  if(!amount) return null;
+  return {personId:a.personId, amount};
+}
+
+/* Per-person dollar shares of `amount`, always summing back to `amount`.
+   The adjustment comes off the top, the remainder is split by the mode, then
+   the adjustment is charged to its person. Percentages would drift as the
+   bill moves; a fixed offset stays fixed.
+   `adjMult` scales the offset for multi-month figures (a yearly projection
+   carries the offset 12 times).                                            */
+function splitShares(split, amount, adjMult){
+  const amt = Number(amount||0);
+  const out = {};
+  if(!amt){ data.people.forEach(p=> out[p.id]=0); return out; }
+  const fr  = splitFractions(split);
+  const adj = splitAdjust(split);
+  const off = adj ? adj.amount * (adjMult==null ? 1 : adjMult) : 0;
+  const base = amt - off;
+  data.people.forEach(p=> out[p.id] = base*(fr[p.id]||0));
+  if(adj) out[adj.personId] = (out[adj.personId]||0) + off;
+  return out;
+}
+
+/* Bar widths. With a fixed adjustment the real split depends on the amount,
+   so size the bar off the row's own filled months instead of the raw mode. */
+function splitBarFractions(c){
+  const fr = splitFractions(c.split);
+  if(!splitAdjust(c.split)) return fr;
+  let ytd=0, n=0;
+  for(let m=1;m<=12;m++){ const v=Number(c.amounts?.[m]||0); if(v){ ytd+=v; n++; } }
+  if(!n) return fr;
+  const sh = splitShares(c.split, ytd, n);
+  let tot=0; data.people.forEach(p=> tot += Math.max(0, sh[p.id]||0));
+  if(tot<=0) return fr;
+  const out={}; data.people.forEach(p=> out[p.id] = Math.max(0, sh[p.id]||0)/tot);
+  return out;
+}
+
 function splitLabel(split){
-  if(!split || split.mode==="even") return "Split evenly";
-  if(split.mode==="solo"){ const p=person(split.personId); return p ? "Only "+p.name : "Split evenly"; }
-  if(split.mode==="custom"){
-    return data.people.map(p=> (p.name[0]||"?")+" "+Math.round((splitFractions(split)[p.id]||0)*100)+"%").join(" · ");
+  let base;
+  if(!split || split.mode==="even") base = "Split evenly";
+  else if(split.mode==="solo"){ const p=person(split.personId); base = p ? "Only "+p.name : "Split evenly"; }
+  else if(split.mode==="custom"){
+    base = data.people.map(p=> (p.name[0]||"?")+" "+Math.round((splitFractions(split)[p.id]||0)*100)+"%").join(" · ");
+  } else base = "";
+  const adj = splitAdjust(split);
+  if(adj){
+    const p = person(adj.personId);
+    base += (base? " " : "") + (adj.amount<0 ? "− " : "+ ") + money(Math.abs(adj.amount)) + " " + p.name;
   }
-  return "";
+  return base;
 }
 
 /* Compute everything for a year. Mirrors the spreadsheet's logic:
@@ -453,7 +506,6 @@ function computeYear(y){
   });
 
   cats.forEach(c=>{
-    const fr = splitFractions(c.split);
     for(let m=1;m<=12;m++){
       const amt = Number(c.amounts?.[m]||0);
       if(c.kind==="statement"){
@@ -461,10 +513,12 @@ function computeYear(y){
         const rem = amt - cardSum[c.id][m];
         if(!res.remainders[c.id]) res.remainders[c.id]=Array(13).fill(0);
         res.remainders[c.id][m] = rem;
-        data.people.forEach(p=> res.personMonth[p.id][m] += rem*fr[p.id]);
+        const sh = splitShares(c.split, rem);
+        data.people.forEach(p=> res.personMonth[p.id][m] += sh[p.id]||0);
       } else {
         if(!c.onCard) res.monthTotal[m] += amt;   // card items live inside the statement total
-        data.people.forEach(p=> res.personMonth[p.id][m] += amt*fr[p.id]);
+        const sh = splitShares(c.split, amt);
+        data.people.forEach(p=> res.personMonth[p.id][m] += sh[p.id]||0);
       }
     }
   });
@@ -580,7 +634,7 @@ function renderLedger(root){
   const tbody = el("tbody");
   yr.categories.forEach((c,idx)=>{
     const tr = el("tr");
-    const fr = splitFractions(c.split);
+    const fr = splitBarFractions(c);
     const bar = el("span",{class:"splitbar",title:splitLabel(c.split)});
     data.people.forEach(p=> bar.append(el("span",{style:`width:${(fr[p.id]||0)*100}%;background:${p.color}`})));
     const meta = el("div",{class:"catmeta"}, bar);
@@ -788,11 +842,52 @@ function openCategoryModal(catId, asStatement){
   );
   splitBox.append(radios, customBox);
   modal.append(splitBox);
+
+  /* Fixed dollar adjustment — for bills that are shared but not symmetric,
+     like a phone plan where one line costs more every month. */
+  const adjChk = el("input",{type:"checkbox"});
+  adjChk.checked = !!splitAdjust(work.split);
+  const adjSel = el("select",{});
+  data.people.forEach(p=> adjSel.append(el("option",{value:p.id},p.name)));
+  adjSel.value = work.split.adjust?.personId || data.people[0].id;
+  const adjAmt = el("input",{type:"number",step:"0.01",placeholder:"0.00",style:"width:100px",
+    value: work.split.adjust?.amount!=null ? work.split.adjust.amount : ""});
+  const adjMsg = el("div",{class:"hint",style:"margin-left:26px"});
+  const adjRow = el("div",{class:"pctrow"},
+    adjSel, el("span",{class:"hint"},"pays an extra $"), adjAmt, el("span",{class:"hint"},"each month"));
+  const adjBox = el("div",{class:"field"},
+    el("label",{style:"display:flex;align-items:center;gap:6px;font-weight:normal"}, adjChk,
+      el("span",{},"One person always pays a fixed amount more")),
+    adjRow, adjMsg,
+    el("div",{class:"hint"},"The extra comes off the top and is charged to that person; whatever is left is divided by the setting above. Unlike a percentage, it stays the same when the bill changes."));
+  function readAdj(){
+    if(adjChk.checked) work.split.adjust = {personId: adjSel.value, amount: Number(adjAmt.value||0)};
+    else delete work.split.adjust;
+    syncSplitUI();
+  }
+  function adjNote(){
+    if(!splitAdjust(work.split)){ adjMsg.textContent=""; return; }
+    let last=0;
+    for(let m=12;m>=1;m--){ const v=Number(work.amounts?.[m]||0); if(v){ last=v; break; } }
+    if(!last){ adjMsg.textContent=""; return; }
+    const sh = splitShares(work.split, last);
+    adjMsg.textContent = "On a "+money(last)+" bill: "+
+      data.people.map(p=> p.name+" "+money(sh[p.id]||0)).join(" · ");
+  }
+  adjChk.addEventListener("change", readAdj);
+  adjSel.addEventListener("change", readAdj);
+  adjAmt.addEventListener("input", ()=>{ if(adjChk.checked) readAdj(); });
+  modal.append(adjBox);
+
   function syncSplitUI(){
     soloSel.disabled = work.split.mode!=="solo";
     customBox.style.display = work.split.mode==="custom" ? "" : "none";
     if(work.split.mode==="solo" && !work.split.personId) work.split.personId = soloSel.value;
     if(work.split.mode==="custom"){ work.split.pct = work.split.pct||{}; data.people.forEach(p=> work.split.pct[p.id]=Number(pctInputs[p.id].value||0)); pctNote(); }
+    // one person already pays it all, so there is nothing to shift
+    adjBox.style.display = work.split.mode==="solo" ? "none" : "";
+    adjRow.style.display = adjChk.checked ? "" : "none";
+    adjNote();
   }
   syncSplitUI();
 
@@ -966,7 +1061,6 @@ function renderSummary(root){
   const tbody = el("tbody");
 
   yr.categories.forEach(c=>{
-    const fr = splitFractions(c.split);
     let ytd=0,cnt=0;
     for(let m=1;m<=12;m++){ const v=Number(c.amounts?.[m]||0); if(c.amounts && (m in c.amounts)){cnt++;} ytd+=v; }
     const avg = cnt? ytd/cnt : 0;
@@ -974,7 +1068,9 @@ function renderSummary(root){
     const tr = el("tr");
     tr.append(el("td",{}, c.name + (c.kind==="statement"?" (statement)": c.onCard?" *":"")),
       el("td",{class:"num"},fmt(ytd,true)), el("td",{class:"num"},fmt(avg,true)), el("td",{class:"num"},fmt(proj,true)));
-    data.people.forEach(p=> tr.append(el("td",{class:"num"},fmt(proj*fr[p.id],true))));
+    // proj covers 12 months, so a fixed monthly offset applies 12 times
+    const shProj = splitShares(c.split, proj, 12);
+    data.people.forEach(p=> tr.append(el("td",{class:"num"},fmt(shProj[p.id],true))));
     tbody.append(tr);
   });
   const trT = el("tr",{class:"totalrow"});
