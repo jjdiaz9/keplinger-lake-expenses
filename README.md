@@ -47,6 +47,11 @@ session the way a `file://` page can.
 
 ## Syncing between computers
 
+Two backends, chosen in **Settings → Sync between computers**. Both use the same
+push / pull / conflict model; only the transport differs.
+
+### Option A — a file in iCloud Drive (no credentials)
+
 Your working copy lives in the browser's local storage. To share it with another
 computer, point the app at a single JSON file kept in a synced folder:
 
@@ -68,6 +73,34 @@ you sync regularly, use a Chromium browser.
 
 Only enable auto-sync on one computer. If two write while both are open, the
 sync service will produce conflicted copies the app can't see.
+
+### Option B — a private GitHub repository
+
+Point the app at a JSON file in a **private** repo and it reads and writes that
+file through the GitHub Contents API. You get full version history, and it works
+on any machine, not just Apple ones. In Settings, fill in the account, repo, file
+path and branch, then paste an access token.
+
+Use a **fine-grained** personal access token limited to that one repository, with
+**Contents: Read and write** and nothing else. Then a leaked token exposes that
+repo alone, not your account.
+
+GitHub returns the file's `sha` on every read and requires it on write, so a
+write built on a stale read is rejected by GitHub itself — a second guard
+underneath the app's own revision check.
+
+**Where you run the app matters when a token is involved.** Browser storage is
+per-origin, and every GitHub Pages project site shares one origin
+(`https://<user>.github.io`, regardless of path). A token saved there is readable
+by any other site you publish under that account. So:
+
+- Use the **hosted site** for the file-based backend, or just to try the app
+- Use a **local copy** of `expense-manager.html` when using a GitHub token
+
+The app detects a `*.github.io` origin and warns you in Settings.
+
+The token is kept in this browser's `localStorage` under its own key. It is never
+written into your data file, so it cannot travel through a sync or an export.
 
 ## Data and privacy
 

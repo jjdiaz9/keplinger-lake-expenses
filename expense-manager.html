@@ -296,6 +296,8 @@ function load(){
     sync = raws ? JSON.parse(raws) : null;
   }catch(e){ sync = null; }
   if(!sync) sync = {fileName:null, baseRev:0, lastPush:null, lastPull:null, auto:false, configured:false};
+  if(!sync.backend) sync.backend = "file";
+  if(!sync.gh) sync.gh = {owner:"",repo:"",path:"expenses.json",branch:"main"};
   if(data && data.years && Object.keys(data.years).length){
     const ys = Object.keys(data.years).sort();
     curYear = data.lastYear && data.years[data.lastYear] ? data.lastYear : ys[ys.length-1];
@@ -1057,36 +1059,102 @@ function openSettings(){
     onchange:e=>{ setDeviceName(e.target.value); toast("This computer is now called “"+deviceName()+"”."); }});
   modal.append(el("div",{class:"field"}, el("label",{},"Name for this computer (shown when copies disagree)"), devIn));
 
+  /* backend picker */
+  const bePick = el("div",{class:"radios",style:"margin-bottom:12px"});
+  [["file","A file in iCloud Drive","No password or token. Best when all your computers are Macs."],
+   ["github","A private GitHub repo","Version history and works anywhere, but needs an access token in this browser."]
+  ].forEach(([val,label,note])=>{
+    const r = el("input",{type:"radio",name:"syncbackend"});
+    r.checked = backend()===val;
+    r.addEventListener("change",()=>{
+      sync.backend = val; sync.configured = false; sync.baseRev = 0; dirty = false;
+      saveSyncState(); updateSyncUI(); close(); openSettings();
+    });
+    bePick.append(el("label",{style:"align-items:flex-start"}, r,
+      el("span",{}, el("span",{style:"font-weight:500"},label),
+        el("span",{class:"hint",style:"display:block"}, note))));
+  });
+  modal.append(bePick);
+
+  if(backend()==="github"){
+    const c = ghCfg();
+    if(onPublicPagesOrigin()){
+      modal.append(el("div",{class:"hint",style:"margin-bottom:12px;padding:8px 10px;background:#FBF3EE;border-radius:8px;border:1px solid #E6D2C4"},
+        el("b",{},"You're running this from "+location.hostname+". "),
+        "Browser storage is shared by every site published on that domain, so a token saved here is readable by any of them. Open the app from your own machine when using a token."));
+    }
+    const mk = (key, label, placeholder, hintText)=>{
+      const inp = el("input",{type:"text",value:c[key]||"",placeholder:placeholder,
+        oninput:e=>{ sync.gh = Object.assign({}, ghCfg(), {[key]: e.target.value.trim()}); saveSyncState(); }});
+      modal.append(el("div",{class:"field"}, el("label",{},label), inp,
+        hintText? el("div",{class:"hint"},hintText) : null));
+    };
+    mk("owner","GitHub account","your-username","The account that owns the private data repo.");
+    mk("repo","Private repository","keplinger-lake-data");
+    mk("path","File path in that repo","expenses.json","Created on first sync if it doesn't exist.");
+    mk("branch","Branch","main");
+
+    const hasTok = !!ghToken();
+    const tokIn = el("input",{type:"password",placeholder: hasTok? "•••••••• saved in this browser" : "github_pat_…",
+      autocomplete:"off"});
+    modal.append(el("div",{class:"field"}, el("label",{},"Access token"), tokIn,
+      el("div",{class:"hint"},
+        "Use a fine-grained token limited to that one repository, with Contents: Read and write. "+
+        "It's stored only in this browser and never written into your data file. "+
+        "Create one at github.com → Settings → Developer settings → Personal access tokens → Fine-grained.")));
+
+    const tokFoot = el("div",{class:"modalfoot",style:"margin-top:0"});
+    tokFoot.append(el("button",{onclick:()=>{
+      if(!tokIn.value.trim()){ toast("Paste a token first."); return; }
+      setGhToken(tokIn.value); tokIn.value=""; toast("Token saved in this browser.");
+      close(); openSettings();
+    }},"Save token"));
+    if(hasTok) tokFoot.append(el("button",{class:"ghost",onclick:()=>{
+      setGhToken(""); toast("Token removed from this browser."); close(); openSettings();
+    }},"Forget token"));
+    tokFoot.append(el("span",{class:"spacer"}));
+    tokFoot.append(el("button",{onclick:()=>{ ghTest(); }},"Test connection"));
+    modal.append(tokFoot);
+    modal.append(el("div",{class:"hint",style:"margin:10px 0 0"},
+      hasTok ? "Token: saved in this browser." : "Token: not set — Sync won't work until you add one."));
+  }
+
   const statusLines = el("div",{class:"hint",style:"margin-bottom:12px;line-height:1.7"});
-  statusLines.append(el("div",{},"File: ", el("b",{},sync.fileName || "not set yet")));
+  statusLines.append(el("div",{}, backend()==="github" ? "Repo: " : "File: ",
+    el("b",{}, backend()==="github" ? (ghReady()? ghLabel() : "not configured yet") : (sync.fileName || "not set yet"))));
   statusLines.append(el("div",{},"Last pushed: " + whenText(sync.lastPush)));
   statusLines.append(el("div",{},"Last loaded: " + whenText(sync.lastPull)));
   statusLines.append(el("div",{}, dirty ? "Status: unsynced changes on this computer" : sync.configured ? "Status: up to date" : "Status: sync not set up"));
   modal.append(statusLines);
 
-  if(HAS_FS_ACCESS){
+  if(backend()==="github" || HAS_FS_ACCESS){
     const autoWrap = el("label",{style:"display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:6px;cursor:pointer"});
     const autoCb = el("input",{type:"checkbox"});
     autoCb.checked = !!sync.auto;
     autoCb.addEventListener("change",()=>{
       sync.auto = autoCb.checked; saveSyncState();
-      toast(sync.auto ? "Auto-sync on — edits write to the file a few seconds after you stop typing."
+      toast(sync.auto ? "Auto-sync on — edits are sent a few seconds after you stop typing."
                       : "Auto-sync off — use the Sync button.");
       scheduleAutoPush();
     });
-    autoWrap.append(autoCb, document.createTextNode("Write to the sync file automatically after each change"));
+    autoWrap.append(autoCb, document.createTextNode(
+      backend()==="github" ? "Commit to GitHub automatically after each change"
+                           : "Write to the sync file automatically after each change"));
     modal.append(autoWrap);
     modal.append(el("div",{class:"hint",style:"margin:0 0 12px 26px"},
-      "Only sync automatically on the computer you use most. If both computers auto-sync while both are open, iCloud will produce conflicted copies."));
+      backend()==="github"
+        ? "Every change becomes a commit, so this can make the history noisy. Leaving it off gives you tidier, more meaningful versions."
+        : "Only sync automatically on the computer you use most. If both computers auto-sync while both are open, iCloud will produce conflicted copies."));
   } else {
     modal.append(el("div",{class:"hint",style:"margin-bottom:12px;padding:8px 10px;background:#FBF3EE;border-radius:8px"},
       "This browser (Safari or Firefox) can't write to a file directly, so Sync saves to your downloads folder instead — move that file into iCloud Drive, replacing the old one. In Chrome, Edge, or Arc the app writes the iCloud file in place, no downloads involved."));
   }
 
   const syncFoot = el("div",{class:"modalfoot",style:"margin-top:0"});
-  syncFoot.append(el("button",{class:"primary",onclick:()=>{ close(); pushToFile(); }},"Sync now"));
-  syncFoot.append(el("button",{onclick:()=>{ close(); pullFromFile(); }},"Load latest"));
-  if(HAS_FS_ACCESS) syncFoot.append(el("button",{onclick:()=>{ close(); chooseSyncFile(); }},"Choose file…"));
+  syncFoot.append(el("button",{class:"primary",onclick:()=>{ close(); pushData(); }},"Sync now"));
+  syncFoot.append(el("button",{onclick:()=>{ close(); pullData(); }},"Load latest"));
+  if(backend()==="file" && HAS_FS_ACCESS)
+    syncFoot.append(el("button",{onclick:()=>{ close(); chooseSyncFile(); }},"Choose file…"));
   if(sync.configured) syncFoot.append(el("button",{class:"ghost",onclick:()=>{ close(); forgetSyncFile(); }},"Forget"));
   modal.append(syncFoot);
 
@@ -1350,6 +1418,166 @@ function adoptRemote(remote, name){
         (data.sync?.device ? " (last edited on " + data.sync.device + ")" : "") + ".");
 }
 
+/* =====================================================================
+   GITHUB BACKEND — keep the data file in a PRIVATE repo.
+
+   Same push/pull/conflict model as the file backend; only the transport
+   differs. The Contents API hands back a `sha` with every read and
+   requires it on write, so GitHub itself rejects a write based on a
+   stale read — a second guard underneath our own rev check.
+
+   The token lives in this browser's localStorage and is never written
+   into the data file, so it can't leak through a sync. Storage is
+   per-origin: if you open this app from a *.github.io address, every
+   other site you publish there shares that storage. Run it from your
+   own machine when a token is involved.
+   ===================================================================== */
+const GH_TOKEN_KEY = "household-expense-manager-gh-token-v1";
+
+function ghCfg(){ return (sync && sync.gh) || {owner:"",repo:"",path:"expenses.json",branch:"main"}; }
+function ghToken(){ try{ return localStorage.getItem(GH_TOKEN_KEY) || ""; }catch(e){ return ""; } }
+function setGhToken(t){
+  try{
+    if(t) localStorage.setItem(GH_TOKEN_KEY, t.trim());
+    else localStorage.removeItem(GH_TOKEN_KEY);
+  }catch(e){}
+}
+function ghReady(){
+  const c = ghCfg();
+  return !!(c.owner && c.repo && c.path && ghToken());
+}
+function ghLabel(){ const c=ghCfg(); return c.owner+"/"+c.repo+" · "+c.path; }
+function onPublicPagesOrigin(){
+  return /\.github\.io$/i.test(location.hostname);
+}
+function b64encode(str){
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  bytes.forEach(b=> bin += String.fromCharCode(b));
+  return btoa(bin);
+}
+function b64decode(b64){
+  const bin = atob(String(b64).replace(/\s/g,""));
+  return new TextDecoder().decode(Uint8Array.from(bin, ch=>ch.charCodeAt(0)));
+}
+function ghUrl(){
+  const c = ghCfg();
+  const path = c.path.split("/").map(encodeURIComponent).join("/");
+  return "https://api.github.com/repos/"+encodeURIComponent(c.owner)+"/"+
+         encodeURIComponent(c.repo)+"/contents/"+path;
+}
+function ghHeaders(){
+  return {"Authorization":"Bearer "+ghToken(),
+          "Accept":"application/vnd.github+json",
+          "X-GitHub-Api-Version":"2022-11-28"};
+}
+function ghExplain(status){
+  if(status===401) return "GitHub rejected the token — it may be expired or mistyped.";
+  if(status===403) return "GitHub refused the request. The token may lack Contents write permission, or you've hit a rate limit.";
+  if(status===404) return "Not found. Check the owner, repo and path — a private repo also returns 404 when the token can't see it.";
+  if(status===409 || status===422) return "The file changed on GitHub while we were writing. Load latest, then sync again.";
+  return "GitHub returned "+status+".";
+}
+/* Read the file. Returns {obj, sha} — obj is null when the file doesn't exist yet.
+
+   GitHub answers 404 both for "that file isn't there yet" and for "this token
+   can't see that repository" (private repos are hidden, not forbidden). Those
+   need very different fixes, so we probe the repo itself to tell them apart
+   rather than guessing. */
+async function ghRead(){
+  const c = ghCfg();
+  const res = await fetch(ghUrl()+"?ref="+encodeURIComponent(c.branch||"main")+"&t="+Date.now(),
+                          {headers: ghHeaders(), cache:"no-store"});
+  if(res.status===404){
+    let probe = null;
+    try{
+      probe = await fetch("https://api.github.com/repos/"+encodeURIComponent(c.owner)+
+                          "/"+encodeURIComponent(c.repo), {headers: ghHeaders(), cache:"no-store"});
+    }catch(e){ probe = null; }
+    if(probe && probe.ok) return {obj:null, sha:null, missing:true};   // repo fine, file absent
+    const st = probe ? probe.status : 404;
+    throw Object.assign(new Error(
+      st===404 ? "Can't see "+c.owner+"/"+c.repo+". Check the account and repository names — a private repo also reads as missing when the token doesn't grant access to it."
+               : ghExplain(st)), {status: st});
+  }
+  if(!res.ok) throw Object.assign(new Error(ghExplain(res.status)), {status:res.status});
+  const meta = await res.json();
+  let obj = null;
+  try{ obj = JSON.parse(b64decode(meta.content||"")); }catch(e){ obj = null; }
+  return {obj, sha: meta.sha};
+}
+async function ghWrite(text, sha){
+  const c = ghCfg();
+  const body = {
+    message: "Expenses — "+deviceName()+" — "+new Date().toISOString().slice(0,16).replace("T"," "),
+    content: b64encode(text),
+    branch: c.branch||"main"
+  };
+  if(sha) body.sha = sha;
+  const res = await fetch(ghUrl(), {method:"PUT", headers:
+    Object.assign({"Content-Type":"application/json"}, ghHeaders()), body: JSON.stringify(body)});
+  if(!res.ok) throw Object.assign(new Error(ghExplain(res.status)), {status:res.status});
+  return await res.json();
+}
+async function ghTest(){
+  if(!ghReady()){ toast("Fill in owner, repo, path and token first."); return false; }
+  try{
+    const r = await ghRead();
+    if(r.missing){ toast("Connected. That file doesn't exist yet — Sync will create it."); return true; }
+    if(!validData(r.obj)){ toast("Connected, but that file isn't expense data."); return false; }
+    const ys = Object.keys(r.obj.years||{}).sort().join(", ");
+    toast("Connected — found "+ys+(r.obj.sync?.device? " (last from "+r.obj.sync.device+")":"")+".");
+    return true;
+  }catch(e){ toast(e.message || "Couldn't reach GitHub."); return false; }
+}
+async function pushToGitHub(opts={}){
+  if(!data){ toast("Nothing to sync yet."); return false; }
+  if(!ghReady()){ toast("Set up the GitHub repo in Settings first."); openSettings(); return false; }
+  data.sync = data.sync || {rev:1};
+  if(!data.sync.rev) data.sync.rev = 1;
+  try{
+    const cur = await ghRead();
+    if(!opts.force && validData(cur.obj) && (cur.obj.sync?.rev||0) > (sync.baseRev||0)){
+      openConflictModal(cur.obj, "push");
+      return false;
+    }
+    await ghWrite(JSON.stringify(data,null,1), cur.sha);
+    sync.lastPush = new Date().toISOString();
+    markSynced(ghLabel(), data.sync.rev);
+    toast("Pushed to "+ghCfg().owner+"/"+ghCfg().repo+".");
+    return true;
+  }catch(e){ console.error(e); toast(e.message || "Push to GitHub failed."); return false; }
+}
+async function pullFromGitHub(){
+  if(!ghReady()){ toast("Set up the GitHub repo in Settings first."); openSettings(); return false; }
+  try{
+    const cur = await ghRead();
+    if(cur.missing){ toast("Nothing there yet — use Sync to create the file."); return false; }
+    if(!validData(cur.obj)){ toast("That file isn't recognisable expense data."); return false; }
+    const rRev = cur.obj.sync?.rev || 0;
+    if(!data || !Object.keys(data.years||{}).length){ adoptRemote(cur.obj, ghLabel()); return true; }
+    if(dirty && rRev > (sync.baseRev||0)){ openConflictModal(cur.obj, "pull"); return false; }
+    if(rRev <= (sync.baseRev||0)){
+      if(dirty){ toast("GitHub is behind this computer — use Sync to push your changes."); }
+      else{
+        sync.lastPull = new Date().toISOString();
+        markSynced(ghLabel(), sync.baseRev);
+        toast("Already up to date.");
+      }
+      updateSyncUI();
+      return true;
+    }
+    adoptRemote(cur.obj, ghLabel());
+    return true;
+  }catch(e){ console.error(e); toast(e.message || "Couldn't read from GitHub."); return false; }
+}
+
+/* ---- backend dispatch ---- */
+function backend(){ return (sync && sync.backend) || "file"; }
+function backendName(){ return backend()==="github" ? "GitHub" : "sync file"; }
+function pushData(opts){ return backend()==="github" ? pushToGitHub(opts) : pushToFile(opts); }
+function pullData(opts){ return backend()==="github" ? pullFromGitHub(opts) : pullFromFile(opts); }
+
 /* ---- conflict resolution ---- */
 function openConflictModal(remote, mode){
   const root = $("#modalRoot");
@@ -1379,7 +1607,7 @@ function openConflictModal(remote, mode){
     data.sync.modified = new Date().toISOString();
     data.sync.device = deviceName();
     saveSyncState();
-    await pushToFile({force:true});
+    await pushData({force:true});
   }));
   modal.append(mkBox("Use the sync file's copy", remote, ()=>{
     downloadJSON(JSON.stringify(data,null,1), "this-computer-backup-"+new Date().toISOString().slice(0,10)+".json");
@@ -1392,28 +1620,37 @@ function openConflictModal(remote, mode){
   overlay.append(modal); root.append(overlay);
 }
 
-/* ---- auto push (Chromium + opted in) ---- */
-function canAutoPush(){ return !!(sync?.auto && HAS_FS_ACCESS && fileHandle); }
+/* ---- auto push (opted in, and only when the backend can do it silently) ---- */
+function canAutoPush(){
+  if(!sync || !sync.auto) return false;
+  if(backend()==="github") return ghReady();
+  return HAS_FS_ACCESS && !!fileHandle;
+}
 function scheduleAutoPush(){
   if(!canAutoPush() || !dirty) return;
   clearTimeout(autoPushTimer);
-  autoPushTimer = setTimeout(()=>{ if(dirty) pushToFile(); }, 4000);
+  autoPushTimer = setTimeout(()=>{ if(dirty) pushData(); }, 4000);
 }
 
 /* ---- sync UI ---- */
 function updateSyncUI(){
   const dot = $("#syncDot"), lbl = $("#syncBtnLabel"), btn = $("#btnSync");
   if(!dot) return;
+  const target = backend()==="github"
+    ? (ghReady() ? ghLabel() : "your private repo")
+    : (sync.fileName || "the sync file");
   dot.className = "syncdot " + (!sync?.configured ? "none" : dirty ? "dirty" : "clean");
   if(!sync?.configured){
     lbl.textContent = "Set up sync";
-    btn.title = "Choose a JSON file in iCloud Drive to share between computers";
+    btn.title = backend()==="github"
+      ? "Connect a private GitHub repo to share between computers"
+      : "Choose a JSON file in iCloud Drive to share between computers";
   } else if(dirty){
     lbl.textContent = "Sync";
-    btn.title = "Unsynced changes on this computer — click to write them to " + (sync.fileName||"the sync file");
+    btn.title = "Unsynced changes on this computer — click to send them to " + target;
   } else {
     lbl.textContent = "Synced";
-    btn.title = "Up to date with " + (sync.fileName||"the sync file") + " · last push " + whenText(sync.lastPush);
+    btn.title = "Up to date with " + target + " · last push " + whenText(sync.lastPush);
   }
   renderSyncBar();
 }
@@ -1426,25 +1663,26 @@ function renderSyncBar(){
   if(!needsPull && !needsPush) return;
 
   const row = el("div",{class:"syncbar" + (needsPush ? " warn" : "")});
-  const fname = el("span",{class:"fname"}, sync.fileName||"sync file");
+  const fname = el("span",{class:"fname"},
+    backend()==="github" ? (ghReady()? ghLabel() : "your private repo") : (sync.fileName||"sync file"));
 
   if(needsPull && needsPush){
     // Both apply — say so, and lead with loading, which is the safe order.
     row.append(el("span",{class:"msg"},
       "You have unsynced changes, and ", fname, " may have changed on your other computer. Load first — you'll be asked what to keep if both moved."));
-    row.append(el("button",{class:"primary", onclick:()=>pullFromFile()},"Load latest"));
-    row.append(el("button",{onclick:()=>pushToFile()},"Sync mine up"));
+    row.append(el("button",{class:"primary", onclick:()=>pullData()},"Load latest"));
+    row.append(el("button",{onclick:()=>pushData()},"Sync mine up"));
   } else if(needsPull){
     row.append(el("span",{class:"msg"},
       "Shared file ", fname,
       sync.lastPull ? " — your other computer may have edited it since you last loaded it (" + whenText(sync.lastPull) + ")."
                     : " — load it to pick up anything your other computer has added."));
-    row.append(el("button",{class:"primary", onclick:()=>pullFromFile()},"Load latest"));
+    row.append(el("button",{class:"primary", onclick:()=>pullData()},"Load latest"));
     row.append(el("button",{class:"ghost", onclick:()=>{ pullPrompted=true; renderSyncBar(); }},"Not now"));
   } else {
     row.append(el("span",{class:"msg"},
       "Unsynced changes on this computer" + (sync.lastPush? " since " + whenText(sync.lastPush) : "") + "."));
-    row.append(el("button",{class:"primary", onclick:()=>pushToFile()},"Sync now"));
+    row.append(el("button",{class:"primary", onclick:()=>pushData()},"Sync now"));
   }
   bar.append(row);
   afterPaint(fitGrid);   // the bar just changed how much room the grid has
@@ -1458,12 +1696,16 @@ async function initSync(){
   renderSyncBar();
 }
 async function forgetSyncFile(){
+  const was = backend(), gh = ghCfg();
   fileHandle = null;
   await idbDel("syncFile");
-  sync = {fileName:null, baseRev:0, lastPush:null, lastPull:null, auto:false, configured:false};
+  // Keep the backend choice and the repo fields so you don't retype them;
+  // the token has its own separate "Forget token" button.
+  sync = {fileName:null, baseRev:0, lastPush:null, lastPull:null, auto:false,
+          configured:false, backend:was, gh:gh};
   dirty = false; pullPrompted = false;
   saveSyncState(); updateSyncUI(); renderSyncBar();
-  toast("Sync file forgotten. Your data is still here in this browser.");
+  toast("Disconnected from the "+(was==="github"?"repo":"sync file")+". Your data is still here in this browser.");
 }
 async function chooseSyncFile(){
   if(!HAS_FS_ACCESS){
@@ -1518,7 +1760,7 @@ function renderEmpty(root){
     el("h2",{},"No expense data in this browser yet"),
     el("p",{},"If you already keep a data file in iCloud Drive, load it — this browser will then stay in sync with it. Otherwise import a one-off file or start from scratch."),
     el("div",{style:"display:flex;gap:10px;justify-content:center;flex-wrap:wrap"},
-      el("button",{class:"primary",onclick:()=>pullFromFile()},"Load from sync file"),
+      el("button",{class:"primary",onclick:()=>pullData()},"Load latest"),
       el("button",{onclick:()=>$("#fileInput").click()},"Import data file"),
       el("button",{onclick:()=>{
         data = freshData();
@@ -1544,7 +1786,7 @@ document.querySelectorAll("#viewTabs button").forEach(b=>{
 });
 $("#btnSync").addEventListener("click",()=>{
   if(!sync.configured && !data){ toast("Load or start some data first."); return; }
-  pushToFile();
+  pushData();
 });
 $("#fileInput").addEventListener("change",e=>{ if(e.target.files[0]) importFile(e.target.files[0]); e.target.value=""; });
 window.addEventListener("beforeunload", e=>{

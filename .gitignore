@@ -20,9 +20,11 @@
 * 2.html
 * 2.json
 
-# Local publishing helper. Stays out of the repo because its safety
-# check lists real vendor names, which are themselves identifying.
+# Local helper scripts. Kept out of the public repo: one lists real
+# vendor names in its safety check, the other names the private repo.
 publish-to-github.sh
+push-data-to-private-repo.sh
+update-github.sh
 
 # macOS / editors
 .DS_Store
