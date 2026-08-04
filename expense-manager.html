@@ -71,6 +71,8 @@ table.ledger{border-collapse:separate;border-spacing:0;width:max-content;min-wid
 .splitbar span{height:100%}
 .cellin{width:80px;border:none;border-radius:0;background:transparent;text-align:right;padding:4px 8px;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px}
 .cellin:hover{background:var(--lake-soft)}
+/* carried forward by the repeat setting, not typed — an estimate, not a bill */
+.cellin.projected{color:var(--muted);font-style:italic}
 .cellin:focus{background:#fff;outline:2px solid var(--lake);outline-offset:-2px}
 .calc{padding:4px 8px;text-align:right;color:var(--muted);font-size:12.5px}
 
@@ -190,6 +192,10 @@ tr.owedrow td{font-size:12px;color:var(--muted);background:#FAFBFA}
 .empty p{color:var(--muted);max-width:440px;margin:8px auto 20px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 18px;border-radius:999px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:30}
 .toast.show{opacity:1}
+/* a toast offering an action has to be clickable, unlike the plain ones */
+.toast.has-action{pointer-events:auto}
+.toast button{margin-left:10px;background:transparent;border:1px solid rgba(255,255,255,.45);color:#fff;border-radius:999px;padding:2px 10px;font-size:12px;font-family:inherit;cursor:pointer}
+.toast button:hover{background:rgba(255,255,255,.16)}
 .savednote{font-size:11.5px;color:var(--muted)}
 
 /* ---------- sync ---------- */
@@ -390,11 +396,57 @@ function parseNum(s){
   const v = Number(t);
   return isFinite(v) ? v : null;
 }
-function toast(msg){
-  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
-  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove("show"), 2600);
+function toast(msg, actionLabel, onAction){
+  const t = $("#toast");
+  t.textContent = msg;                       // also clears any previous button
+  const hasAction = !!(actionLabel && onAction);
+  t.classList.toggle("has-action", hasAction);
+  if(hasAction){
+    t.append(el("button",{onclick:()=>{
+      t.classList.remove("show","has-action"); clearTimeout(t._h); onAction();
+    }}, actionLabel));
+  }
+  t.classList.add("show");
+  clearTimeout(t._h);
+  // an undo needs long enough to actually reach for
+  t._h = setTimeout(()=>t.classList.remove("show","has-action"), hasAction? 7000 : 2600);
 }
 function person(id){ return data.people.find(p=>p.id===id); }
+
+/* ---------- recurring amounts ----------
+   A category marked `repeat` carries an edited amount forward to the rest of
+   the year. Months before the edit are never touched — those are history.
+   Filled months are flagged in c.projected so the grid can dim them and the
+   summary can average only what actually happened.                        */
+function isProjected(c, m){ return !!(c.projected && c.projected[m]); }
+function fillForward(c, fromMonth, value){
+  c.amounts = c.amounts||{}; c.projected = c.projected||{};
+  let n = 0;
+  for(let m=fromMonth+1;m<=12;m++){
+    if(c.amounts[m]===value && c.projected[m]) continue;   // already says this
+    c.amounts[m] = value;
+    c.projected[m] = true;
+    n++;
+  }
+  return n;
+}
+// Snapshot from `fromMonth` through December so an undo restores the edit too.
+function snapshotTail(c, fromMonth){
+  const amounts = {}, projected = {};
+  for(let m=fromMonth;m<=12;m++){
+    if(c.amounts && (m in c.amounts)) amounts[m] = c.amounts[m];
+    if(isProjected(c,m)) projected[m] = true;
+  }
+  return {fromMonth, amounts, projected};
+}
+function restoreTail(c, snap){
+  if(!snap) return;
+  c.amounts = c.amounts||{}; c.projected = c.projected||{};
+  for(let m=snap.fromMonth;m<=12;m++){
+    if(m in snap.amounts) c.amounts[m] = snap.amounts[m]; else delete c.amounts[m];
+    if(snap.projected[m]) c.projected[m] = true; else delete c.projected[m];
+  }
+}
 
 /* ---------- split math ---------- */
 // Returns {personId: fraction} for a category's split, normalized to 1.
@@ -639,6 +691,7 @@ function renderLedger(root){
     data.people.forEach(p=> bar.append(el("span",{style:`width:${(fr[p.id]||0)*100}%;background:${p.color}`})));
     const meta = el("div",{class:"catmeta"}, bar);
     if(c.dueDay) meta.append(el("span",{class:"due"},"due "+c.dueDay));
+    if(c.repeat) meta.append(el("span",{class:"due"},"repeats"));
     if(c.kind==="statement") meta.append(el("span",{class:"oncard"},"card statement"));
     else if(c.onCard){
       const st = yr.categories.find(x=>x.id===c.onCard);
@@ -651,15 +704,24 @@ function renderLedger(root){
     for(let m=1;m<=12;m++){
       const v = c.amounts?.[m];
       if(typeof v==="number") ytd+=v;
-      const inp = el("input",{class:"cellin",type:"text",inputmode:"decimal",
+      const proj = isProjected(c,m);
+      const inp = el("input",{class:"cellin"+(proj?" projected":""),type:"text",inputmode:"decimal",
         value: (typeof v==="number")? fmt(v):"",
-        "aria-label": c.name+" "+MONTHS[m-1],
+        "aria-label": c.name+" "+MONTHS[m-1]+(proj?" (projected)":""),
+        title: proj ? "Projected — carried forward. Type here to make it an actual." : null,
         onchange:(e)=>{
           const nv = parseNum(e.target.value);
           c.amounts = c.amounts||{};
+          const before = c.repeat ? snapshotTail(c,m) : null;
           if(nv==null) delete c.amounts[m]; else c.amounts[m]=nv;
+          if(c.projected) delete c.projected[m];      // typed = actual
           e.target.value = nv==null? "": fmt(nv);
+          const filled = (c.repeat && nv!=null && m<12) ? fillForward(c,m,nv) : 0;
           save(); refreshComputed();
+          if(filled){
+            toast("Filled "+MON_ABBR[m]+"–Dec with "+money(nv), "Undo",
+                  ()=>{ restoreTail(c,before); save(); refreshComputed(); });
+          }
         }});
       tr.append(el("td",{class:moClass(m)}, inp));
     }
@@ -804,6 +866,15 @@ function openCategoryModal(catId, asStatement){
   const dueIn = el("input",{type:"text",value:work.dueDay||"",placeholder:"e.g. 1st, 15th, quarterly",oninput:e=>work.dueDay=e.target.value});
   modal.append(el("div",{class:"field"}, el("label",{},"Due (optional)"), dueIn));
 
+  // recurring amount
+  const repChk = el("input",{type:"checkbox"});
+  repChk.checked = !!work.repeat;
+  repChk.addEventListener("change",()=>{ work.repeat = repChk.checked; });
+  modal.append(el("div",{class:"field"},
+    el("label",{style:"display:flex;align-items:center;gap:6px;font-weight:normal"}, repChk,
+      el("span",{},"Same amount every month")),
+    el("div",{class:"hint"},"Editing a month carries that amount through December, so a rate change only has to be typed once. Earlier months are left alone. Carried-forward months show dimmed until you type over them.")));
+
   // split controls
   const splitBox = el("div",{class:"field"});
   splitBox.append(el("label",{},"Who this belongs to"));
@@ -942,7 +1013,7 @@ function openCategoryModal(catId, asStatement){
   foot.append(el("button",{class:"primary",onclick:()=>{
     if(!work.name.trim()){ nameIn.focus(); return; }
     const prev = isNew ? null : {name:c.name, dueDay:c.dueDay, kind:c.kind, onCard:c.onCard,
-                                 split:JSON.stringify(c.split||{})};
+                                 repeat:!!c.repeat, split:JSON.stringify(c.split||{})};
     Object.assign(c, work, {name: work.name.trim(), dueDay: (work.dueDay||"").trim()||null});
     if(isNew) yr.categories.push(c);
     save(); close(); render();
@@ -951,18 +1022,20 @@ function openCategoryModal(catId, asStatement){
     // but the amounts never are — so we offer, per change, rather than assume.
     if(prev){
       const changed = prev.name!==c.name || prev.dueDay!==c.dueDay || prev.kind!==c.kind ||
-                      prev.onCard!==c.onCard || prev.split!==JSON.stringify(c.split||{});
+                      prev.onCard!==c.onCard || prev.split!==JSON.stringify(c.split||{}) ||
+                      prev.repeat!==!!c.repeat;
       if(changed){
         const matches = matchingYears(c, prev.name);
         if(matches.length) openApplyToYearsModal({
           title:"Apply these changes to other years?",
           hint: (prev.name!==c.name ? "“"+prev.name+"” is now “"+c.name+"” in "+curYear+". " : "Updated in "+curYear+". ")
-                + "Amounts are never touched — only the name, due day, split and card setting.",
+                + "Amounts are never touched — only the name, due day, split, repeat and card setting.",
           matches, actionLabel:"Apply to selected",
           doneLabel:"Updated in {y}.",
           apply:(years)=>{
             years.forEach(({year,cat})=>{
               cat.name = c.name; cat.dueDay = c.dueDay; cat.kind = c.kind;
+              cat.repeat = !!c.repeat;
               cat.split = JSON.parse(JSON.stringify(c.split||{mode:"even"}));
               // only link to a statement that actually exists in that year
               cat.onCard = (c.onCard && data.years[year].categories.some(x=>x.id===c.onCard))
@@ -1061,9 +1134,14 @@ function renderSummary(root){
   const tbody = el("tbody");
 
   yr.categories.forEach(c=>{
-    let ytd=0,cnt=0;
-    for(let m=1;m<=12;m++){ const v=Number(c.amounts?.[m]||0); if(c.amounts && (m in c.amounts)){cnt++;} ytd+=v; }
-    const avg = cnt? ytd/cnt : 0;
+    // Average off actual months only — a carried-forward projection is a guess,
+    // and averaging a guess back into the projection just echoes it.
+    let ytd=0,cnt=0,actual=0,acnt=0;
+    for(let m=1;m<=12;m++){
+      const v=Number(c.amounts?.[m]||0); ytd+=v;
+      if(c.amounts && (m in c.amounts)){ cnt++; if(!isProjected(c,m)){ actual+=v; acnt++; } }
+    }
+    const avg = acnt? actual/acnt : (cnt? ytd/cnt : 0);
     const proj = avg*12;
     const tr = el("tr");
     tr.append(el("td",{}, c.name + (c.kind==="statement"?" (statement)": c.onCard?" *":"")),
@@ -1082,7 +1160,7 @@ function renderSummary(root){
   tbody.append(trT);
   table.append(tbody);
   panel.append(table);
-  panel.append(el("div",{class:"settle hint"},"* itemized on a card statement — already inside the statement total, listed for category tracking and per-person splits. Averages use months that have an entry"+(isCurrentYear?", so projections firm up as the year fills in.":".")));
+  panel.append(el("div",{class:"settle hint"},"* itemized on a card statement — already inside the statement total, listed for category tracking and per-person splits. Averages use months you actually entered, ignoring amounts carried forward by the repeat setting"+(isCurrentYear?", so projections firm up as real bills come in.":".")));
   root.append(panel);
 }
 
