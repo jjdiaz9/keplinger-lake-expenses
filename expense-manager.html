@@ -221,6 +221,69 @@ tr.owedrow td{font-size:12px;color:var(--muted);background:#FAFBFA}
   .cellin{width:70px}
 }
 @media (prefers-reduced-motion:reduce){ .toast{transition:none} }
+
+/* ---------- YNAB view ---------- */
+.ynab{max-width:1180px}
+.ynab-lead{margin:0 0 14px;max-width:66ch}
+.ynab-dim{color:var(--muted)}
+.ynab-ok{color:var(--ok)}
+.ynab-flex{flex:1}
+.ynab-busy{padding:40px 0;text-align:center;color:var(--muted)}
+.ynab-row{display:flex;align-items:center;gap:10px}
+.ynab-bar{display:flex;align-items:center;gap:10px;padding-bottom:12px;margin-bottom:14px;
+  border-bottom:1px solid var(--line)}
+.ynab-seg{display:flex;gap:2px}
+.ynab-seg button{border:0;background:transparent;color:var(--muted);padding:5px 11px;border-radius:7px}
+.ynab-seg button.on{background:var(--lake-soft);color:var(--lake)}
+.ynab-chip{font-size:11.5px;color:var(--lake);background:var(--lake-soft);
+  padding:3px 9px;border-radius:999px;white-space:nowrap}
+.ynab-act{padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--line-soft)}
+.ynab-warn{background:#FBF6EC;border-left:2px solid var(--russet);padding:9px 12px;
+  margin:0 0 12px;font-size:13px;max-width:74ch}
+.ynab-err{background:#FBF1F0;border-left:2px solid var(--neg);padding:10px 12px;margin:0 0 12px}
+.ynab-err p{margin:0 0 8px}
+.ynab-step{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--line-soft)}
+.ynab-step:last-child{border-bottom:0}
+.ynab-step h3{margin:1px 0 5px;font-size:13.5px;font-weight:600}
+.ynab-step p{margin:0 0 8px;color:var(--muted);max-width:62ch}
+.ynab-n{flex:none;width:21px;height:21px;border-radius:50%;background:var(--lake-soft);
+  color:var(--lake);font-size:11.5px;display:grid;place-items:center;font-family:var(--mono)}
+.ynab-uri{display:block;font-family:var(--mono);font-size:12px;background:var(--paper);
+  border:1px solid var(--line);border-radius:6px;padding:7px 9px;margin-bottom:8px;word-break:break-all}
+.ynab-step input[type=text]{min-width:290px;font-family:var(--mono)}
+.ynab-pick{display:block;width:100%;text-align:left;margin-bottom:5px}
+.ynab-gh{margin:16px 0 6px;font-size:11.5px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--muted)}
+.ynab-item{display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-radius:7px;cursor:pointer}
+.ynab-item:hover{background:var(--paper)}
+.ynab-item input{margin-top:2px}
+.ynab-lbl{display:block;font-size:13.5px}
+.ynab-hint{display:block;font-size:12px;color:var(--muted)}
+.ynab-apply{margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
+.ynab-det{margin-top:18px}
+.ynab-det summary{cursor:pointer;color:var(--muted);font-size:13px}
+.ynab-det p{margin:8px 0;color:var(--muted);max-width:66ch;font-size:13px}
+.ynab-ul{margin:0;padding-left:20px;color:var(--muted);font-size:13px;columns:2;column-gap:28px}
+.ynab-tol{width:64px;font-family:var(--mono)}
+.ynab-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+.ynab-tbl{border-collapse:collapse;width:100%;font-size:12.5px}
+.ynab-tbl th,.ynab-tbl td{padding:5px 8px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+.ynab-tbl thead th{position:sticky;top:0;background:var(--card);font-weight:600;font-size:11px;
+  text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.ynab-tbl .r{text-align:right}
+.ynab-tbl .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.ynab-tbl .nm{position:sticky;left:0;background:var(--card);min-width:150px}
+.ynab-tbl tbody tr:hover,.ynab-tbl tbody tr:hover .nm{background:var(--paper)}
+.ynab-tbl .tot{border-left:1px solid var(--line);font-weight:600}
+.ynab-tbl .over{color:var(--neg)}
+.ynab-tbl .under{color:var(--ok)}
+.ynab-tbl .proj{color:var(--muted);font-style:italic}
+.ynab-key{margin:10px 0 0;font-size:12px;color:var(--muted);max-width:78ch}
+.ynab-attr{margin:22px 0 0;font-size:11px;line-height:1.45;color:var(--muted);max-width:78ch}
+@media (max-width:700px){
+  .ynab-ul{columns:1}
+  .ynab-step input[type=text]{min-width:0;width:100%}
+}
 </style>
 </head>
 <body>
@@ -237,6 +300,7 @@ tr.owedrow td{font-size:12px;color:var(--muted);background:#FAFBFA}
       <button data-view="ledger" class="active">Ledger</button>
       <button data-view="splits">Splits</button>
       <button data-view="summary">Summary</button>
+      <button data-view="ynab">YNAB</button>
     </div>
     <span class="rule"></span>
     <span class="savednote" id="savedNote"></span>
@@ -1965,6 +2029,528 @@ function renderEmpty(root){
 }
 
 /* ---------- render root ---------- */
+/* =====================================================================
+   YNAB — read-only sync of categories and actual spending.
+
+   Uses the app's own data object, save(), render(), toast() and el().
+   Storage:
+     household-expense-manager-ynab-v1   plan id, client id, cache      (localStorage)
+     household-expense-manager-ynab-tok  access token          (sessionStorage)
+   The token is never written to localStorage and never enters an export.
+
+   Not affiliated, associated, or in any way officially connected with YNAB
+   or any of its subsidiaries or affiliates. The official YNAB website can
+   be found at https://www.ynab.com.
+   ===================================================================== */
+
+const YNAB_CFG_KEY = "household-expense-manager-ynab-v1";
+const YNAB_TOK_KEY = "household-expense-manager-ynab-tok";
+const YNAB_API     = "https://api.ynab.com/v1";
+const YNAB_AUTH    = "https://app.ynab.com/oauth/authorize";
+
+let ynabTab = "categories";   // "categories" | "compare"
+let ynabDiff = null;
+let ynabPicks = new Set();
+let ynabBusy = null;          // progress string while a request is in flight
+let ynabError = null;
+
+/* ---------- storage (every accessor can throw) ---------- */
+function ynabLS(){ try{ return window.localStorage; }catch(e){ return null; } }
+function ynabSS(){ try{ return window.sessionStorage; }catch(e){ return null; } }
+function ynabGet(s,k){ try{ return s ? s.getItem(k) : null; }catch(e){ return null; } }
+function ynabSet(s,k,v){ try{ if(s) s.setItem(k,v); return true; }catch(e){ return false; } }
+function ynabDel(s,k){ try{ if(s) s.removeItem(k); }catch(e){} }
+
+function ynabCfg(){
+  try{
+    return Object.assign({ clientId:"", planId:"", planName:"", knowledge:null,
+                           cats:{}, actuals:{}, tolerance:1, lastSync:null },
+                         JSON.parse(ynabGet(ynabLS(), YNAB_CFG_KEY) || "{}"));
+  }catch(e){
+    return { clientId:"", planId:"", planName:"", knowledge:null,
+             cats:{}, actuals:{}, tolerance:1, lastSync:null };
+  }
+}
+function ynabSaveCfg(c){ ynabSet(ynabLS(), YNAB_CFG_KEY, JSON.stringify(c)); }
+
+function ynabToken(){
+  try{
+    const t = JSON.parse(ynabGet(ynabSS(), YNAB_TOK_KEY) || "null");
+    if(!t) return null;
+    if(Date.now() >= t.expiresAt){ ynabDel(ynabSS(), YNAB_TOK_KEY); return null; }
+    return t;
+  }catch(e){ return null; }
+}
+function ynabSetToken(tok, secs){
+  ynabSet(ynabSS(), YNAB_TOK_KEY,
+    JSON.stringify({ accessToken:tok, expiresAt: Date.now() + secs*1000 - 30000 }));
+}
+
+/* ---------- auth ---------- */
+function ynabRedirectUri(){ return location.origin + location.pathname; }
+
+function ynabConnect(clientId){
+  const state = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  ynabSet(ynabSS(), "ynab-oauth-state", state);
+  location.assign(YNAB_AUTH
+    + "?client_id="    + encodeURIComponent(clientId)
+    + "&redirect_uri=" + encodeURIComponent(ynabRedirectUri())
+    + "&response_type=token&scope=read-only"
+    + "&state="        + encodeURIComponent(state));
+}
+
+/* Runs once at startup. Returns "ok" | "denied" | "bad-state" | null. */
+function ynabCaptureRedirect(){
+  const hash = location.hash || "";
+  if(hash.indexOf("access_token=") === -1 && hash.indexOf("error=") === -1) return null;
+  const p = new URLSearchParams(hash.replace(/^#/,""));
+  const expected = ynabGet(ynabSS(), "ynab-oauth-state");
+  ynabDel(ynabSS(), "ynab-oauth-state");
+  try{ history.replaceState(null, "", location.pathname + location.search); }
+  catch(e){ location.hash = ""; }
+
+  if(p.get("error")) return "denied";
+  if(!expected || p.get("state") !== expected) return "bad-state";
+  const tok = p.get("access_token");
+  if(!tok) return "denied";
+  const secs = parseInt(p.get("expires_in") || "7200", 10);
+  ynabSetToken(tok, isFinite(secs) ? secs : 7200);
+  return "ok";
+}
+
+/* ---------- API ---------- */
+function ynabErr(message, kind){ const e = new Error(message); e.kind = kind; return e; }
+
+/* One message per status. Sharing a string between codes sends people to an
+   action that fails for a different reason, and the loop has no exit. */
+function ynabDescribe(status, body){
+  const id = (body && body.error && body.error.id) || String(status);
+  switch(id){
+    case "400":   return ["YNAB rejected the request as malformed. That is a bug here, not something you can fix.","bad-request"];
+    case "401":   return ["Your YNAB session has expired or was revoked. Connect again.","auth"];
+    case "403.1": return ["That YNAB subscription has lapsed, so the API will not return data.","subscription"];
+    case "403.2": return ["That YNAB trial has expired, so the API will not return data.","subscription"];
+    case "403.3": return ["This token is read-only and the request tried to change the plan. Nothing was changed.","scope"];
+    case "403.4": return ["YNAB refused the request for exceeding a data limit. Try fewer months at once.","limit"];
+    case "404.1": return ["That API address does not exist. Check the plan id.","not-found"];
+    case "404.2": return ["No plan with that id. Pick the plan again.","not-found"];
+    case "409":   return ["YNAB reported a conflict. Nothing was changed.","conflict"];
+    case "429":   return ["YNAB allows 200 requests an hour and this token has hit the limit. Wait a while, then try again.","rate-limit"];
+    case "500":   return ["YNAB had an internal error. Nothing was changed — try again shortly.","server"];
+    case "503":   return ["YNAB is unavailable or the request timed out. Try again shortly.","server"];
+  }
+  if(status === 401) return ["Your YNAB session has expired or was revoked. Connect again.","auth"];
+  if(status === 429) return ["YNAB allows 200 requests an hour and this token has hit the limit. Wait a while, then try again.","rate-limit"];
+  return ["YNAB returned an unexpected response (" + status + ").","unknown"];
+}
+
+async function ynabApi(path){
+  const t = ynabToken();
+  if(!t) throw ynabErr("Not connected to YNAB.","auth");
+  let res;
+  try{
+    res = await fetch(YNAB_API + path, { headers:{ Authorization:"Bearer " + t.accessToken } });
+  }catch(e){
+    throw ynabErr("Could not reach YNAB. Check your network connection.","network");
+  }
+  let body = null;
+  try{ body = await res.json(); }catch(e){}
+  if(!res.ok){
+    const [msg, kind] = ynabDescribe(res.status, body);
+    if(kind === "auth") ynabDel(ynabSS(), YNAB_TOK_KEY);
+    throw ynabErr(msg, kind);
+  }
+  return body.data;
+}
+
+/* ---------- categories ---------- */
+const ynabNorm = s => String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+
+/* Delta responses carry only what changed, so merge rather than replace. */
+function ynabMerge(cache, groups){
+  for(const g of (groups||[])){
+    for(const c of (g.categories||[])){
+      if(c.deleted || c.internal || g.internal){ delete cache[c.id]; continue; }
+      cache[c.id] = { name:c.name, group:g.name, hidden:!!(c.hidden || g.hidden) };
+    }
+  }
+  return cache;
+}
+
+async function ynabPullCategories(cfg){
+  const q = cfg.knowledge ? "?last_knowledge_of_server=" + cfg.knowledge : "";
+  const d = await ynabApi("/plans/" + encodeURIComponent(cfg.planId) + "/categories" + q);
+  ynabMerge(cfg.cats, d.category_groups);
+  cfg.knowledge = d.server_knowledge;
+  return cfg;
+}
+
+/* Statement rows have no YNAB counterpart and never appear in a bucket. */
+function ynabDiffCategories(yr, cats){
+  const out = { renamed:[], suggested:[], added:[], hidden:[], unmatched:[] };
+  if(!yr) return out;
+  const list = yr.categories || [];
+  const byId = new Map(list.filter(c=>c.ynabCategoryId).map(c=>[c.ynabCategoryId, c]));
+  const byName = new Map();
+  for(const c of list){
+    if(c.ynabCategoryId || c.kind === "statement") continue;
+    byName.set(ynabNorm(c.name), c);
+  }
+  for(const [yid, y] of Object.entries(cats)){
+    const local = byId.get(yid);
+    if(local){
+      if(local.name !== y.name)
+        out.renamed.push({ ynabId:yid, localId:local.id, from:local.name, to:y.name });
+      if(y.hidden && !local.archived)
+        out.hidden.push({ ynabId:yid, localId:local.id, name:local.name });
+      continue;
+    }
+    const guess = byName.get(ynabNorm(y.name));
+    if(guess){
+      out.suggested.push({ ynabId:yid, localId:guess.id, name:guess.name, group:y.group });
+      byName.delete(ynabNorm(y.name));
+    }else if(!y.hidden){
+      out.added.push({ ynabId:yid, name:y.name, group:y.group });
+    }
+  }
+  for(const c of list){
+    if(c.kind === "statement") continue;
+    if(c.ynabCategoryId && !cats[c.ynabCategoryId])
+      out.unmatched.push({ name:c.name, reason:"gone" });
+    else if(!c.ynabCategoryId)
+      out.unmatched.push({ name:c.name, reason:"unlinked" });
+  }
+  return out;
+}
+
+/* Additive only: renames, links, archives, appends. Never removes a row,
+   never touches an amount. */
+function ynabApplyDiff(yr, diff, picks){
+  const byId = new Map((yr.categories||[]).map(c=>[c.id,c]));
+  let n = 0;
+  for(const r of diff.renamed){
+    if(!picks.has("rename:"+r.ynabId)) continue;
+    const c = byId.get(r.localId); if(!c) continue; c.name = r.to; n++;
+  }
+  for(const r of diff.suggested){
+    if(!picks.has("link:"+r.ynabId)) continue;
+    const c = byId.get(r.localId); if(!c) continue;
+    c.ynabCategoryId = r.ynabId; c.ynabGroup = r.group; n++;
+  }
+  for(const r of diff.hidden){
+    if(!picks.has("archive:"+r.ynabId)) continue;
+    const c = byId.get(r.localId); if(!c) continue; c.archived = true; n++;
+  }
+  for(const r of diff.added){
+    if(!picks.has("add:"+r.ynabId)) continue;
+    yr.categories.push({ id:uid("cat"), name:r.name, dueDay:"", kind:"normal",
+      onCard:null, split:{mode:"even"}, amounts:{},
+      ynabCategoryId:r.ynabId, ynabGroup:r.group });
+    n++;
+  }
+  return n;
+}
+
+/* ---------- actual spending ---------- */
+/* YNAB reports outflow as negative. activity_currency is a plain decimal
+   (added in API v1.82.0); milliunits are the fallback. */
+function ynabSpend(c){
+  if(typeof c.activity_currency === "number") return -c.activity_currency;
+  if(typeof c.activity === "number") return -(c.activity/1000);
+  return 0;
+}
+async function ynabPullMonth(cfg, ym){
+  const d = await ynabApi("/plans/" + encodeURIComponent(cfg.planId) + "/months/" + ym + "-01");
+  const row = {};
+  for(const c of ((d.month && d.month.categories) || [])){
+    if(c.deleted || c.internal) continue;
+    row[c.id] = Math.round(ynabSpend(c)*100)/100;
+  }
+  cfg.actuals[ym] = row;
+}
+
+/* Compare the ledger against YNAB for one year.
+   Months the repeat feature filled forward are guesses, not plans, so they
+   are shown but kept out of the variance totals. */
+function ynabCompare(yr, cfg, yearKey){
+  const rows = [];
+  for(const c of (yr.categories||[])){
+    if(!c.ynabCategoryId || c.kind === "statement") continue;
+    const months = []; let pT=0, aT=0, any=false, projN=0;
+    for(let m=1;m<=12;m++){
+      const ym  = yearKey + "-" + String(m).padStart(2,"0");
+      const act = cfg.actuals[ym] ? cfg.actuals[ym][c.ynabCategoryId] : undefined;
+      const pla = c.amounts ? c.amounts[m] : undefined;
+      const hasA = typeof act === "number", hasP = typeof pla === "number";
+      const proj = isProjected(c, m);
+      if(hasA || hasP) any = true;
+      if(hasP && !proj) pT += pla;
+      if(hasA && !proj) aT += act;
+      if(proj && (hasA || hasP)) projN++;
+      months.push({ m, planned: hasP?pla:null, actual: hasA?act:null, projected: proj,
+                    diff: (hasA && hasP) ? Math.round((act-pla)*100)/100 : null });
+    }
+    if(!any) continue;
+    rows.push({ name:c.name, months,
+      plannedTotal: Math.round(pT*100)/100,
+      actualTotal:  Math.round(aT*100)/100,
+      diffTotal:    Math.round((aT-pT)*100)/100,
+      projectedCount: projN });
+  }
+  rows.sort((a,b)=>Math.abs(b.diffTotal)-Math.abs(a.diffTotal));
+  return rows;
+}
+
+/* ---------- view ---------- */
+function renderYnab(root){
+  const cfg = ynabCfg();
+  const wrap = el("div",{class:"ynab"});
+  root.append(wrap);
+
+  if(ynabBusy){ wrap.append(el("p",{class:"ynab-busy"}, ynabBusy)); return; }
+
+  for(const w of ynabWarnings()) wrap.append(el("p",{class:"ynab-warn"}, w));
+  if(ynabError){
+    const box = el("div",{class:"ynab-err"}, el("p",{}, ynabError.message));
+    if(ynabError.kind === "auth" && cfg.clientId)
+      box.append(el("button",{class:"primary", onclick:()=>ynabConnect(cfg.clientId)},"Connect again"));
+    if(ynabError.kind === "not-found")
+      box.append(el("button",{onclick:()=>{ const c=ynabCfg(); c.planId=""; ynabSaveCfg(c); ynabError=null; render(); }},"Pick another plan"));
+    wrap.append(box);
+  }
+
+  if(!cfg.clientId || !cfg.planId || !ynabToken()){ ynabSetup(wrap, cfg); return; }
+
+  wrap.append(el("div",{class:"ynab-bar"},
+    el("div",{class:"ynab-seg"},
+      el("button",{class: ynabTab==="categories"?"on":"", onclick:()=>{ynabTab="categories"; render();}},"Categories"),
+      el("button",{class: ynabTab==="compare"?"on":"", onclick:()=>{ynabTab="compare"; render();}},"Planned vs actual")),
+    el("span",{class:"ynab-flex"}),
+    el("span",{class:"ynab-chip"}, cfg.planName || "Connected"),
+    el("span",{class:"ynab-chip"}, "read-only · " +
+      Math.max(0,Math.round((ynabToken().expiresAt-Date.now())/60000)) + " min left")));
+
+  if(ynabTab === "categories") ynabCategoriesView(wrap, cfg);
+  else ynabCompareView(wrap, cfg);
+
+  wrap.append(el("p",{class:"ynab-attr"},
+    "Not affiliated, associated, or in any way officially connected with YNAB or any of its "
+    + "subsidiaries or affiliates. The official YNAB website can be found at ynab.com."));
+}
+
+function ynabWarnings(){
+  const w = [];
+  if(location.protocol === "file:")
+    w.push("OAuth cannot redirect back to a file:// page. Open the app from its web address to connect.");
+  return w;
+}
+
+function ynabSetup(wrap, cfg){
+  wrap.append(el("p",{class:"ynab-lead"},
+    "Read your YNAB categories and spending. Read-only — nothing here can change your budget."));
+
+  const step = (n,title,...kids) => el("div",{class:"ynab-step"},
+    el("span",{class:"ynab-n"},String(n)), el("div",{}, el("h3",{},title), ...kids));
+
+  const uri = ynabRedirectUri();
+  wrap.append(step(1,"Create an OAuth application in YNAB",
+    el("p",{},"Account Settings → Developer Settings → New Application. Set the redirect URI to exactly:"),
+    el("code",{class:"ynab-uri"}, uri),
+    el("button",{onclick:()=>{ if(navigator.clipboard) navigator.clipboard.writeText(uri); toast("Address copied."); }},"Copy address")));
+
+  const inp = el("input",{type:"text",value:cfg.clientId||"",placeholder:"Client ID",spellcheck:"false"});
+  wrap.append(step(2,"Paste the Client ID",
+    el("p",{},"The Client Secret is not needed and should not be entered anywhere in this app."),
+    el("div",{class:"ynab-row"}, inp,
+      el("button",{class:"primary", onclick:()=>{
+        const v = inp.value.trim();
+        if(!v){ toast("Enter the Client ID first."); return; }
+        const c = ynabCfg(); c.clientId = v; ynabSaveCfg(c); ynabConnect(v);
+      }},"Connect to YNAB"))));
+
+  if(ynabToken() && !cfg.planId){
+    const box = el("div",{}, el("p",{class:"ynab-dim"},"Loading plans…"));
+    wrap.append(step(3,"Choose the plan", box));
+    ynabApi("/plans").then(d=>{
+      box.innerHTML = "";
+      const plans = d.plans || [];
+      if(!plans.length){ box.append(el("p",{},"No plans on this account.")); return; }
+      plans.forEach(p=>box.append(el("button",{class:"ynab-pick", onclick:()=>{
+        const c = ynabCfg(); c.planId = p.id; c.planName = p.name; ynabSaveCfg(c); render();
+      }}, p.name)));
+    }).catch(e=>{ box.innerHTML=""; box.append(el("p",{class:"ynab-dim"}, e.message)); });
+  }
+}
+
+function ynabCategoriesView(wrap, cfg){
+  wrap.append(el("div",{class:"ynab-row ynab-act"},
+    el("span",{class:"ynab-dim"},"Comparing YNAB against " + curYear),
+    el("span",{class:"ynab-flex"}),
+    el("button",{class:"primary", onclick:ynabRunCategories},
+      cfg.knowledge ? "Check for changes" : "Pull categories")));
+
+  if(!ynabDiff){
+    wrap.append(el("p",{class:"ynab-dim"},
+      "Pull your YNAB categories to line them up with this year's ledger."));
+    return;
+  }
+  const total = ynabDiff.renamed.length + ynabDiff.suggested.length
+              + ynabDiff.added.length + ynabDiff.hidden.length;
+  if(!total){
+    wrap.append(el("p",{class:"ynab-ok"},"Everything matches. No changes to make."));
+  }else{
+    const grp = (title, rows, fn) => {
+      if(!rows.length) return;
+      wrap.append(el("h4",{class:"ynab-gh"}, title));
+      rows.forEach(r=>{
+        const [key,label,hint] = fn(r);
+        const cb = el("input",{type:"checkbox"});
+        cb.checked = ynabPicks.has(key);
+        cb.addEventListener("change",()=>{ cb.checked ? ynabPicks.add(key) : ynabPicks.delete(key); });
+        wrap.append(el("label",{class:"ynab-item"}, cb,
+          el("div",{}, el("span",{class:"ynab-lbl"},label), el("span",{class:"ynab-hint"},hint))));
+      });
+    };
+    grp("Renamed in YNAB", ynabDiff.renamed, r=>["rename:"+r.ynabId, r.from+" → "+r.to, "Keeps every amount on this row."]);
+    grp("Not linked yet", ynabDiff.suggested, r=>["link:"+r.ynabId, r.name, "Same name in YNAB · "+r.group+". Links them by id."]);
+    grp("New in YNAB", ynabDiff.added, r=>["add:"+r.ynabId, r.name, r.group+" · adds an empty row to "+curYear+"."]);
+    grp("Hidden in YNAB", ynabDiff.hidden, r=>["archive:"+r.ynabId, r.name, "Marks it archived here. History is kept."]);
+
+    wrap.append(el("div",{class:"ynab-row ynab-apply"},
+      el("span",{class:"ynab-flex"}),
+      el("button",{onclick:()=>{ ynabPicks=new Set(); render(); }},"Clear"),
+      el("button",{class:"primary", onclick:ynabApplyPicks},"Apply selected")));
+  }
+
+  if(ynabDiff.unmatched.length){
+    const d = el("details",{class:"ynab-det"});
+    d.append(el("summary",{}, ynabDiff.unmatched.length + " rows here with no YNAB match"));
+    d.append(el("p",{class:"ynab-dim"},
+      "Left exactly as they are. Card statements and one-off purchases have no YNAB counterpart."));
+    const ul = el("ul",{class:"ynab-ul"});
+    ynabDiff.unmatched.forEach(u=>ul.append(el("li",{},u.name)));
+    d.append(ul); wrap.append(d);
+  }
+}
+
+function ynabCompareView(wrap, cfg){
+  const tol = el("input",{type:"number",min:"0",step:"1",value:String(cfg.tolerance),class:"ynab-tol"});
+  tol.addEventListener("change",()=>{
+    const c = ynabCfg(); c.tolerance = Math.max(0, Number(tol.value)||0); ynabSaveCfg(c); render();
+  });
+  wrap.append(el("div",{class:"ynab-row ynab-act"},
+    el("span",{class:"ynab-dim"},"Flag differences over"), tol,
+    el("span",{class:"ynab-flex"}),
+    el("button",{class:"primary", onclick:ynabRunActuals},"Pull " + curYear + " spending")));
+
+  const yr = data.years[curYear];
+  const rows = ynabCompare(yr, cfg, curYear);
+  if(!rows.length){
+    wrap.append(el("p",{class:"ynab-dim"},
+      "Nothing to compare yet. Link categories first, then pull spending."));
+    return;
+  }
+  const off = rows.filter(r=>Math.abs(r.diffTotal) > cfg.tolerance);
+  wrap.append(el("p",{class:"ynab-lead"}, off.length
+    ? off.length + " of " + rows.length + " categories are off by more than " + money(cfg.tolerance) + " this year."
+    : "Every linked category is within " + money(cfg.tolerance) + " this year."));
+
+  const t = el("table",{class:"ynab-tbl"});
+  const hr = el("tr",{}, el("th",{},"Category"));
+  for(let m=1;m<=12;m++) hr.append(el("th",{class:"r"}, MON_ABBR[m-1]));
+  hr.append(el("th",{class:"r tot"},"Year"));
+  t.append(el("thead",{},hr));
+
+  const tb = el("tbody",{});
+  let anyProjected = false;
+  rows.forEach(r=>{
+    const tr = el("tr",{}, el("td",{class:"nm"}, r.name));
+    r.months.forEach(mo=>{
+      const td = el("td",{class:"r num"});
+      if(mo.projected) anyProjected = true;
+      if(mo.diff === null){
+        td.className = "r num ynab-dim";
+        td.textContent = mo.actual !== null ? money(mo.actual) : "";
+        if(mo.actual !== null) td.title = "Actual " + money(mo.actual) + ", nothing planned";
+        else if(mo.planned !== null) td.title = "Planned " + money(mo.planned) + ", no YNAB activity";
+      }else{
+        const big = Math.abs(mo.diff) > cfg.tolerance;
+        td.className = "r num" + (mo.projected ? " proj" : big ? (mo.diff>0?" over":" under") : "");
+        td.textContent = big ? (mo.diff>0?"+":"−") + fmt(Math.abs(mo.diff)) : "·";
+        td.title = "Planned " + money(mo.planned) + (mo.projected ? " (projected)" : "")
+                 + " · actual " + money(mo.actual);
+      }
+      tr.append(td);
+    });
+    const big = Math.abs(r.diffTotal) > cfg.tolerance;
+    const tt = el("td",{class:"r num tot" + (big ? (r.diffTotal>0?" over":" under") : "")});
+    tt.textContent = (r.diffTotal>0?"+":r.diffTotal<0?"−":"") + fmt(Math.abs(r.diffTotal));
+    tt.title = "Planned " + money(r.plannedTotal) + " · actual " + money(r.actualTotal)
+             + (r.projectedCount ? " · " + r.projectedCount + " projected months left out" : "");
+    tr.append(tt); tb.append(tr);
+  });
+  t.append(tb);
+  wrap.append(el("div",{class:"ynab-scroll"}, t));
+  wrap.append(el("p",{class:"ynab-key"},
+    "Positive means YNAB spending ran above the ledger. A dot means the two agree."
+    + (anyProjected ? " Months filled forward by a repeat are shown in grey and left out of the year total — those are projections, not plans." : "")));
+}
+
+/* ---------- actions ---------- */
+async function ynabGuard(msg, fn){
+  ynabError = null; ynabBusy = msg; render();
+  try{ await fn(); }
+  catch(e){ ynabError = e; }
+  ynabBusy = null; render();
+}
+
+function ynabRunCategories(){
+  ynabGuard("Reading your YNAB categories…", async () => {
+    const cfg = ynabCfg();
+    await ynabPullCategories(cfg);
+    cfg.lastSync = new Date().toISOString();
+    ynabSaveCfg(cfg);
+    ynabDiff = ynabDiffCategories(data.years[curYear], cfg.cats);
+    ynabPicks = new Set();
+  });
+}
+
+function ynabApplyPicks(){
+  if(!ynabPicks.size){ toast("Nothing selected."); return; }
+  const n = ynabApplyDiff(data.years[curYear], ynabDiff, ynabPicks);
+  const cfg = ynabCfg();
+  ynabDiff = ynabDiffCategories(data.years[curYear], cfg.cats);
+  ynabPicks = new Set();
+  save();
+  toast(n + (n===1 ? " change applied." : " changes applied."));
+  render();
+}
+
+function ynabRunActuals(){
+  const yearKey = curYear;
+  ynabGuard("Reading spending…", async () => {
+    const cfg = ynabCfg();
+    const before = Object.keys(cfg.actuals).length;
+    const now = new Date();
+    const last = (String(now.getFullYear()) === String(yearKey)) ? now.getMonth()+1 : 12;
+    try{
+      for(let m=1;m<=last;m++){
+        ynabBusy = "Reading " + MONTHS[m-1] + " · " + m + " of " + last; render();
+        await ynabPullMonth(cfg, yearKey + "-" + String(m).padStart(2,"0"));
+      }
+      cfg.lastSync = new Date().toISOString();
+    }catch(e){
+      const got = Object.keys(cfg.actuals).length - before;
+      if(got > 0) e.message += " The " + got + (got===1?" month":" months")
+        + " already read were saved, so you can pick up from there later.";
+      throw e;
+    }finally{
+      ynabSaveCfg(cfg);   // keep whatever arrived
+    }
+    ynabTab = "compare";
+  });
+}
+
 function render(){
   renderHeader();
   const main = $("#main"); main.innerHTML="";
@@ -1972,6 +2558,7 @@ function render(){
   if(!data.years[curYear]) curYear = Object.keys(data.years).sort().pop();
   if(curView==="ledger") renderLedger(main);
   else if(curView==="splits") renderSplits(main);
+  else if(curView==="ynab") renderYnab(main);
   else renderSummary(main);
 }
 
@@ -2009,6 +2596,19 @@ $("#btnAddYear").addEventListener("click",()=>{
 });
 
 load();
+
+/* Coming back from YNAB's authorization screen: take the token out of the URL
+   before anything else can read it, then land the user on the YNAB view. */
+const ynabAuth = ynabCaptureRedirect();
+if(ynabAuth === "ok") curView = "ynab";
+else if(ynabAuth === "denied"){
+  curView = "ynab";
+  ynabError = { message:"YNAB access was not granted.", kind:"denied" };
+}else if(ynabAuth === "bad-state"){
+  curView = "ynab";
+  ynabError = { message:"That sign-in could not be verified, so it was discarded. Connect again.", kind:"auth" };
+}
+
 applyDensity();
 render();
 initSync();
