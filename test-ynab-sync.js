@@ -164,6 +164,31 @@ console.log("\nCategory sync");
   ok("new row visible in the ledger", /Dock repair/.test(d.querySelector("#main").textContent));
 }
 
+console.log("\nTemplate groups");
+{
+  /* A budget started from YNAB's template has its Bills/Needs/Wants groups
+     flagged internal, though the categories inside them are the user's own.
+     Those must still come through; only YNAB's own categories are dropped. */
+  const {w,d}=boot({ cfg:connected, session:live(), routes:{
+    "/plans/p1/categories":{status:200,body:{data:{category_groups:[
+      {id:"gb",name:"Bills",internal:true,categories:[
+        {id:"y-elec",name:"Electric",hidden:false,deleted:false,internal:false},
+        {id:"y-tax",name:"Taxes",hidden:false,deleted:false,internal:false}]},
+      {id:"gcc",name:"Credit Card Payments",internal:true,categories:[
+        {id:"y-visa",name:"Prime Visa - 2836",hidden:false,deleted:false,internal:false}]},
+      {id:"gi",name:"Internal Master Category",internal:true,categories:[
+        {id:"y-rta",name:"Inflow: Ready to Assign",internal:true}]}
+    ],server_knowledge:5}}}}});
+  await tick(); goToYnab(d);
+  btn(d,/Pull categories/).click(); await tick(80);
+  const t=d.querySelector("#main").textContent;
+  ok("user category in an internal template group is kept", /Taxes/.test(t));
+  ok("credit card payment category excluded", !/2836/.test(t));
+  ok("YNAB internal category still excluded", !/Ready to Assign/.test(t));
+  const cats=JSON.parse(w.localStorage.getItem(CFG)).cats;
+  eq("only real categories cached", Object.keys(cats).sort(), ["y-elec","y-tax"]);
+}
+
 console.log("\nDelta");
 {
   const {d,calls}=boot({ cfg:{...connected,knowledge:77}, session:live(), routes:{

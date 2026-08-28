@@ -2169,8 +2169,15 @@ const ynabNorm = s => String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
 /* Delta responses carry only what changed, so merge rather than replace. */
 function ynabMerge(cache, groups){
   for(const g of (groups||[])){
+    /* A group's internal flag is not a reliable signal: YNAB marks the groups
+       its own onboarding template created (Bills, Needs, Wants) internal even
+       though every category inside them is the user's. Only the category's own
+       internal flag marks a YNAB-generated category. Credit card payment
+       categories are account transfers rather than spending, so they are
+       excluded by group instead. */
+    const payments = /^credit card payments$/i.test(g.name || "");
     for(const c of (g.categories||[])){
-      if(c.deleted || c.internal || g.internal){ delete cache[c.id]; continue; }
+      if(c.deleted || c.internal || g.deleted || payments){ delete cache[c.id]; continue; }
       cache[c.id] = { name:c.name, group:g.name, hidden:!!(c.hidden || g.hidden) };
     }
   }
