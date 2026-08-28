@@ -279,6 +279,10 @@ tr.owedrow td{font-size:12px;color:var(--muted);background:#FAFBFA}
 .ynab-tbl .under{color:var(--ok)}
 .ynab-tbl .proj{color:var(--muted);font-style:italic}
 .ynab-key{margin:10px 0 0;font-size:12px;color:var(--muted);max-width:78ch}
+.ynab-roll{font-size:11px;color:var(--lake);background:var(--lake-soft);
+  padding:1px 6px;border-radius:999px;margin-left:6px;white-space:nowrap}
+.ynab-pick-sel{font-size:12.5px;max-width:230px}
+.ynab-ul li{margin-bottom:6px}
 .ynab-attr{margin:22px 0 0;font-size:11px;line-height:1.45;color:var(--muted);max-width:78ch}
 @media (max-width:700px){
   .ynab-ul{columns:1}
@@ -2051,6 +2055,9 @@ const YNAB_AUTH    = "https://app.ynab.com/oauth/authorize";
 let ynabTab = "categories";   // "categories" | "compare"
 let ynabDiff = null;
 let ynabPicks = new Set();
+/* localCategoryId -> ynabCategoryId, chosen by hand for rows that name
+   matching cannot reach (several ledger rows under one YNAB category). */
+let ynabManual = new Map();
 let ynabBusy = null;          // progress string while a request is in flight
 let ynabError = null;
 
@@ -2197,19 +2204,31 @@ function ynabDiffCategories(yr, cats){
   const out = { renamed:[], suggested:[], added:[], hidden:[], unmatched:[] };
   if(!yr) return out;
   const list = yr.categories || [];
-  const byId = new Map(list.filter(c=>c.ynabCategoryId).map(c=>[c.ynabCategoryId, c]));
+  /* One YNAB category can legitimately back several ledger rows — a bill that
+     moved on or off a card mid-year is split in two here but is a single
+     category in YNAB. Collect every row per id rather than the last one. */
+  const byId = new Map();
+  for(const c of list){
+    if(!c.ynabCategoryId) continue;
+    if(!byId.has(c.ynabCategoryId)) byId.set(c.ynabCategoryId, []);
+    byId.get(c.ynabCategoryId).push(c);
+  }
   const byName = new Map();
   for(const c of list){
     if(c.ynabCategoryId || c.kind === "statement") continue;
     byName.set(ynabNorm(c.name), c);
   }
   for(const [yid, y] of Object.entries(cats)){
-    const local = byId.get(yid);
-    if(local){
-      if(local.name !== y.name)
-        out.renamed.push({ ynabId:yid, localId:local.id, from:local.name, to:y.name });
-      if(y.hidden && !local.archived)
-        out.hidden.push({ ynabId:yid, localId:local.id, name:local.name });
+    const locals = byId.get(yid);
+    if(locals && locals.length){
+      const stale = locals.filter(c => c.name !== y.name);
+      if(stale.length)
+        out.renamed.push({ ynabId:yid, localIds:stale.map(c=>c.id),
+                           from:stale[0].name, to:y.name, count:stale.length });
+      const live = locals.filter(c => y.hidden && !c.archived);
+      if(live.length)
+        out.hidden.push({ ynabId:yid, localIds:live.map(c=>c.id),
+                          name:live[0].name, count:live.length });
       continue;
     }
     const guess = byName.get(ynabNorm(y.name));
@@ -2223,21 +2242,21 @@ function ynabDiffCategories(yr, cats){
   for(const c of list){
     if(c.kind === "statement") continue;
     if(c.ynabCategoryId && !cats[c.ynabCategoryId])
-      out.unmatched.push({ name:c.name, reason:"gone" });
+      out.unmatched.push({ id:c.id, name:c.name, reason:"gone" });
     else if(!c.ynabCategoryId)
-      out.unmatched.push({ name:c.name, reason:"unlinked" });
+      out.unmatched.push({ id:c.id, name:c.name, reason:"unlinked" });
   }
   return out;
 }
 
 /* Additive only: renames, links, archives, appends. Never removes a row,
    never touches an amount. */
-function ynabApplyDiff(yr, diff, picks){
+function ynabApplyDiff(yr, diff, picks, manual, cats){
   const byId = new Map((yr.categories||[]).map(c=>[c.id,c]));
   let n = 0;
   for(const r of diff.renamed){
     if(!picks.has("rename:"+r.ynabId)) continue;
-    const c = byId.get(r.localId); if(!c) continue; c.name = r.to; n++;
+    for(const lid of r.localIds){ const c = byId.get(lid); if(c){ c.name = r.to; n++; } }
   }
   for(const r of diff.suggested){
     if(!picks.has("link:"+r.ynabId)) continue;
@@ -2246,13 +2265,21 @@ function ynabApplyDiff(yr, diff, picks){
   }
   for(const r of diff.hidden){
     if(!picks.has("archive:"+r.ynabId)) continue;
-    const c = byId.get(r.localId); if(!c) continue; c.archived = true; n++;
+    for(const lid of r.localIds){ const c = byId.get(lid); if(c){ c.archived = true; n++; } }
   }
   for(const r of diff.added){
     if(!picks.has("add:"+r.ynabId)) continue;
     yr.categories.push({ id:uid("cat"), name:r.name, dueDay:"", kind:"normal",
       onCard:null, split:{mode:"even"}, amounts:{},
       ynabCategoryId:r.ynabId, ynabGroup:r.group });
+    n++;
+  }
+  /* Hand-picked links. These are the only way to put a second ledger row under
+     a YNAB category that another row already claims. */
+  for(const [lid, yid] of (manual || new Map())){
+    const c = byId.get(lid); if(!c || !yid) continue;
+    c.ynabCategoryId = yid;
+    c.ynabGroup = (cats && cats[yid]) ? cats[yid].group : "";
     n++;
   }
   return n;
@@ -2280,16 +2307,32 @@ async function ynabPullMonth(cfg, ym){
    Months the repeat feature filled forward are guesses, not plans, so they
    are shown but kept out of the variance totals. */
 function ynabCompare(yr, cfg, yearKey){
-  const rows = [];
+  /* Several ledger rows can share one YNAB category. YNAB reports a single
+     figure for the category, so the planned amounts are summed and compared
+     once. Splitting the actual back across the rows would be inventing data —
+     YNAB does not know how the ledger divides them. */
+  const groups = new Map();
   for(const c of (yr.categories||[])){
     if(!c.ynabCategoryId || c.kind === "statement") continue;
+    if(!groups.has(c.ynabCategoryId)) groups.set(c.ynabCategoryId, []);
+    groups.get(c.ynabCategoryId).push(c);
+  }
+  const rows = [];
+  for(const [yid, members] of groups){
     const months = []; let pT=0, aT=0, any=false, projN=0;
     for(let m=1;m<=12;m++){
       const ym  = yearKey + "-" + String(m).padStart(2,"0");
-      const act = cfg.actuals[ym] ? cfg.actuals[ym][c.ynabCategoryId] : undefined;
-      const pla = c.amounts ? c.amounts[m] : undefined;
-      const hasA = typeof act === "number", hasP = typeof pla === "number";
-      const proj = isProjected(c, m);
+      const act = cfg.actuals[ym] ? cfg.actuals[ym][yid] : undefined;
+      let pla = null, proj = false;
+      for(const c of members){
+        const v = c.amounts ? c.amounts[m] : undefined;
+        if(typeof v !== "number") continue;
+        pla = (pla === null ? 0 : pla) + v;
+        /* One projected contributor makes the whole sum a guess. */
+        if(isProjected(c, m)) proj = true;
+      }
+      if(pla !== null) pla = Math.round(pla*100)/100;
+      const hasA = typeof act === "number", hasP = pla !== null;
       if(hasA || hasP) any = true;
       if(hasP && !proj) pT += pla;
       if(hasA && !proj) aT += act;
@@ -2298,7 +2341,11 @@ function ynabCompare(yr, cfg, yearKey){
                     diff: (hasA && hasP) ? Math.round((act-pla)*100)/100 : null });
     }
     if(!any) continue;
-    rows.push({ name:c.name, months,
+    const ycat = cfg.cats ? cfg.cats[yid] : null;
+    rows.push({ name: (members.length > 1 && ycat && ycat.name) ? ycat.name : members[0].name,
+      memberCount: members.length,
+      memberNames: members.map(c=>c.name),
+      months,
       plannedTotal: Math.round(pT*100)/100,
       actualTotal:  Math.round(aT*100)/100,
       diffTotal:    Math.round((aT-pT)*100)/100,
@@ -2423,20 +2470,47 @@ function ynabCategoriesView(wrap, cfg){
     grp("New in YNAB", ynabDiff.added, r=>["add:"+r.ynabId, r.name, r.group+" · adds an empty row to "+curYear+"."]);
     grp("Hidden in YNAB", ynabDiff.hidden, r=>["archive:"+r.ynabId, r.name, "Marks it archived here. History is kept."]);
 
-    wrap.append(el("div",{class:"ynab-row ynab-apply"},
-      el("span",{class:"ynab-flex"}),
-      el("button",{onclick:()=>{ ynabPicks=new Set(); render(); }},"Clear"),
-      el("button",{class:"primary", onclick:ynabApplyPicks},"Apply selected")));
   }
 
   if(ynabDiff.unmatched.length){
-    const d = el("details",{class:"ynab-det"});
+    const d = el("details",{class:"ynab-det", open: ynabManual.size ? "" : undefined});
     d.append(el("summary",{}, ynabDiff.unmatched.length + " rows here with no YNAB match"));
     d.append(el("p",{class:"ynab-dim"},
-      "Left exactly as they are. Card statements and one-off purchases have no YNAB counterpart."));
+      "Link one by hand below. Several rows may point at the same YNAB category — "
+      + "a bill that moved on or off a card is two rows here but one category in YNAB, "
+      + "and their planned amounts are added together when comparing. "
+      + "Statement rows have no counterpart and are left alone."));
+    const opts = Object.entries(cfg.cats || {})
+      .map(([id,c]) => ({ id, label:(c.group ? c.group + " / " : "") + c.name }))
+      .sort((a,b) => a.label.localeCompare(b.label));
     const ul = el("ul",{class:"ynab-ul"});
-    ynabDiff.unmatched.forEach(u=>ul.append(el("li",{},u.name)));
+    ynabDiff.unmatched.forEach(u=>{
+      const li = el("li",{}, u.name + " ");
+      if(u.reason === "unlinked" && opts.length){
+        const sel = el("select",{class:"ynab-pick-sel"});
+        sel.append(el("option",{value:""},"— not linked —"));
+        opts.forEach(o=>{
+          const op = el("option",{value:o.id}, o.label);
+          if(ynabManual.get(u.id) === o.id) op.selected = true;
+          sel.append(op);
+        });
+        sel.addEventListener("change",()=>{
+          if(sel.value) ynabManual.set(u.id, sel.value); else ynabManual.delete(u.id);
+          render();
+        });
+        li.append(sel);
+      }
+      ul.append(li);
+    });
     d.append(ul); wrap.append(d);
+  }
+
+  if(total || ynabManual.size){
+    wrap.append(el("div",{class:"ynab-row ynab-apply"},
+      el("span",{class:"ynab-flex"}),
+      el("button",{onclick:()=>{ ynabPicks=new Set(); ynabManual=new Map(); render(); }},"Clear"),
+      el("button",{class:"primary", onclick:ynabApplyPicks},
+        ynabManual.size ? "Apply selected · " + ynabManual.size + " linked by hand" : "Apply selected")));
   }
 }
 
@@ -2471,7 +2545,12 @@ function ynabCompareView(wrap, cfg){
   const tb = el("tbody",{});
   let anyProjected = false;
   rows.forEach(r=>{
-    const tr = el("tr",{}, el("td",{class:"nm"}, r.name));
+    const nm = el("td",{class:"nm"}, r.name);
+    if(r.memberCount > 1)
+      nm.append(el("span",{class:"ynab-roll",
+        title:"Planned amounts combined from " + r.memberCount + " ledger rows: "
+              + r.memberNames.join(", ")}, r.memberCount + " rows"));
+    const tr = el("tr",{}, nm);
     r.months.forEach(mo=>{
       const td = el("td",{class:"r num"});
       if(mo.projected) anyProjected = true;
@@ -2500,6 +2579,7 @@ function ynabCompareView(wrap, cfg){
   wrap.append(el("div",{class:"ynab-scroll"}, t));
   wrap.append(el("p",{class:"ynab-key"},
     "Positive means YNAB spending ran above the ledger. A dot means the two agree."
+    + (rows.some(r=>r.memberCount>1) ? " Where several ledger rows share one YNAB category, their planned amounts are added together and compared once." : "")
     + (anyProjected ? " Months filled forward by a repeat are shown in grey and left out of the year total — those are projections, not plans." : "")));
 }
 
@@ -2519,15 +2599,17 @@ function ynabRunCategories(){
     ynabSaveCfg(cfg);
     ynabDiff = ynabDiffCategories(data.years[curYear], cfg.cats);
     ynabPicks = new Set();
+    ynabManual = new Map();
   });
 }
 
 function ynabApplyPicks(){
-  if(!ynabPicks.size){ toast("Nothing selected."); return; }
-  const n = ynabApplyDiff(data.years[curYear], ynabDiff, ynabPicks);
+  if(!ynabPicks.size && !ynabManual.size){ toast("Nothing selected."); return; }
   const cfg = ynabCfg();
+  const n = ynabApplyDiff(data.years[curYear], ynabDiff, ynabPicks, ynabManual, cfg.cats);
   ynabDiff = ynabDiffCategories(data.years[curYear], cfg.cats);
   ynabPicks = new Set();
+  ynabManual = new Map();
   save();
   toast(n + (n===1 ? " change applied." : " changes applied."));
   render();

@@ -229,6 +229,96 @@ console.log("\nPlanned vs actual");
   eq("stops at the current month", cached.length, new Date().getMonth()+1);
 }
 
+console.log("\nSeveral ledger rows, one YNAB category");
+{
+  /* A bill that moved off the card mid-year: two ledger rows, one YNAB
+     category. YNAB reports a single actual, so the planned halves must be
+     added together and compared once. */
+  const split = ledger();
+  split.years["2026"].categories.push(
+    { id:"electric-cc", name:"Electric", dueDay:"", kind:"normal", onCard:"visa",
+      split:{mode:"even"}, amounts:{1:20,2:24.5}, ynabCategoryId:"y-elec" });
+  const routes={};
+  const acts={1:-201.12,2:-160.00};
+  for(let m=1;m<=12;m++)
+    routes["/plans/p1/months/2026-"+String(m).padStart(2,"0")+"-01"]={status:200,body:{data:{month:{
+      categories:[{id:"y-elec",name:"Electric",activity_currency:acts[m]||0}]}}}};
+  const {d}=boot({ data:split, cfg:{...connected, cats:{"y-elec":{name:"Electric",group:"Bills"}}},
+                   session:live(), routes});
+  await tick(); goToYnab(d);
+  btn(d,/Planned vs actual/).click(); await tick();
+  btn(d,/Pull 2026 spending/).click(); await tick(400);
+
+  const trs=[...d.querySelectorAll(".ynab-tbl tbody tr")].filter(r=>/Electric/.test(r.textContent));
+  eq("one combined row, not two", trs.length, 1);
+  ok("row is marked as combined", /2 rows/.test(trs[0].textContent));
+  const cells=[...trs[0].querySelectorAll("td")];
+  // Jan: planned 180 + 20 = 200 against actual 201.12
+  eq("january compares the summed plan", cells[1].textContent, "+1.12");
+  // Feb: planned 175.50 + 24.50 = 200 against actual 160.00
+  eq("february compares the summed plan", cells[2].textContent, "−40.00");
+  ok("total tooltip shows the combined plan", /Planned \$400\.00/.test(cells[13].title), cells[13].title);
+  ok("member rows named in the tooltip",
+     /combined from 2 ledger rows/i.test(trs[0].querySelector(".ynab-roll").title),
+     trs[0].querySelector(".ynab-roll").title);
+}
+{
+  // the same pair, but only one row linked — the old behaviour, kept as a contrast
+  const one = ledger();
+  const routes={};
+  for(let m=1;m<=12;m++)
+    routes["/plans/p1/months/2026-"+String(m).padStart(2,"0")+"-01"]={status:200,body:{data:{month:{
+      categories:[{id:"y-elec",activity_currency:-200}]}}}};
+  const {d}=boot({ data:one, cfg:connected, session:live(), routes});
+  await tick(); goToYnab(d);
+  btn(d,/Planned vs actual/).click(); await tick();
+  btn(d,/Pull 2026 spending/).click(); await tick(400);
+  const tr=[...d.querySelectorAll(".ynab-tbl tbody tr")].find(r=>/Electric/.test(r.textContent));
+  ok("a single linked row carries no combined marker", !tr.querySelector(".ynab-roll"));
+}
+
+console.log("\nLinking a second row by hand");
+{
+  const split = ledger();
+  split.years["2026"].categories.push(
+    { id:"electric-cc", name:"Electric", dueDay:"", kind:"normal", onCard:"visa",
+      split:{mode:"even"}, amounts:{1:20} });
+  const {w,d}=boot({ data:split, cfg:connected, session:live(), routes:{
+    "/plans/p1/categories":{status:200,body:{data:{category_groups:[
+      {id:"g",name:"Bills",categories:[
+        {id:"y-elec",name:"Electric",hidden:false,deleted:false,internal:false}]}],
+      server_knowledge:9}}}}});
+  await tick(); goToYnab(d);
+  btn(d,/Pull categories/).click(); await tick(80);
+
+  const sels=[...d.querySelectorAll(".ynab-pick-sel")];
+  ok("unlinked rows offer a category picker", sels.length>0);
+  /* Match the row's own label, not li.textContent — that would also sweep in
+     the option labels inside the row's own picker. */
+  const rowName = li => (li.firstChild ? li.firstChild.textContent : "").trim();
+  const target=[...d.querySelectorAll(".ynab-ul li")].find(li=>rowName(li)==="Electric");
+  ok("the unlinked duplicate is listed", !!target);
+  const sel=target.querySelector("select");
+  ok("the already-claimed category is still offered",
+     [...sel.options].some(o=>/Electric/.test(o.textContent)));
+
+  sel.value=[...sel.options].find(o=>/Electric/.test(o.textContent)).value;
+  sel.dispatchEvent(new w.Event("change"));
+  await tick();
+  btn(d,/Apply selected/).click(); await tick(500);
+
+  const after=JSON.parse(w.localStorage.getItem(LS)).years["2026"].categories;
+  eq("hand-linked row now carries the id",
+     after.find(c=>c.id==="electric-cc").ynabCategoryId, "y-elec");
+  eq("the original link is untouched",
+     after.find(c=>c.id==="electric").ynabCategoryId, "y-elec");
+  eq("group recorded from the YNAB cache",
+     after.find(c=>c.id==="electric-cc").ynabGroup, "Bills");
+  eq("amounts untouched by linking", after.find(c=>c.id==="electric-cc").amounts, {1:20});
+  eq("no other row was linked by accident",
+     after.find(c=>c.id==="internet").ynabCategoryId, undefined);
+}
+
 console.log("\nFailures");
 for(const [code,id,expect,noReconnect] of [
   [401,"401",/expired or was revoked/,false],
